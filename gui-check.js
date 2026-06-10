@@ -7,11 +7,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 app.whenReady().then(async () => {
   await sleep(1500); // let main.js create + load the window
   const win = BrowserWindow.getAllWindows()[0];
+  win.webContents.on('console-message', (e, lvl, msg) => console.log('[renderer]', msg));
   const shot = async n =>
     fs.writeFileSync(path.join(__dirname, n), (await win.webContents.capturePage()).toPNG());
 
   const before = win.getBounds();
   await shot('shot-1-main.png');
+
+  // running pomodoro → goal dots, taskbar progress, tray tooltip
+  await win.webContents.executeJavaScript('pomStart(); 0');
+  await sleep(600);
+  await shot('shot-2-pom-running.png');
 
   await win.webContents.executeJavaScript('enterZen(); 0');
   await sleep(900);
@@ -23,12 +29,20 @@ app.whenReady().then(async () => {
     0`);
   await sleep(1600); // let the smoothed bands ease up to the injected values
   const fsOn = win.isFullScreen();
-  await shot('shot-2-zen.png');
+  await shot('shot-3-zen-waves.png');
 
-  await win.webContents.executeJavaScript('exitZen(); 0');
+  await win.webContents.executeJavaScript('cycleZenViz(); 0');
+  await sleep(700);
+  await shot('shot-4-zen-ring.png');
+
+  await win.webContents.executeJavaScript('cycleZenViz(); 0');
+  await sleep(2500); // let particles drift + energize
+  await shot('shot-5-zen-drift.png');
+
+  await win.webContents.executeJavaScript('cycleZenViz(); pomPause(); exitZen(); 0');
   await sleep(1200);
   const after = win.getBounds();
-  await shot('shot-3-restored.png');
+  await shot('shot-6-restored.png');
 
   console.log(JSON.stringify({ before, fsOn, after, stillFs: win.isFullScreen() }));
   app.exit(0);

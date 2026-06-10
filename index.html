@@ -271,6 +271,46 @@
     .zen-ctrls{display:flex;align-items:center;gap:6px;flex-shrink:0}
     .zen-exit,.zen-bottom{transition:opacity .35s}
     body.zen-mode.hide-cursor .zen-exit,body.zen-mode.hide-cursor .zen-bottom{opacity:0}
+    .zen-viz-btn{position:absolute;top:18px;left:18px;z-index:3;background:rgba(22,22,22,.72);
+      border:1px solid var(--bd);border-radius:7px;color:var(--mu);font:400 10px/1 var(--mono);
+      letter-spacing:.1em;text-transform:uppercase;padding:9px 13px;cursor:pointer;transition:all .15s}
+    .zen-viz-btn:hover{color:var(--y);border-color:var(--y)}
+    .zen-viz-btn{transition:opacity .35s,color .15s,border-color .15s}
+    body.zen-mode.hide-cursor .zen-viz-btn{opacity:0}
+
+    /* ══ Noise generator ══ */
+    .noise{background:var(--s1);border:1px solid var(--bd);border-radius:10px;
+      padding:16px 22px 18px;margin-bottom:14px}
+    .noise-btns{display:flex;gap:8px}
+    .nz{flex:1;background:var(--s2);border:1px solid var(--bd);border-radius:7px;color:var(--mu);
+      font:700 10px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:11px;
+      cursor:pointer;transition:all .12s}
+    .nz:hover{border-color:var(--y);color:var(--y)}
+    .nz.on{background:var(--yd);border-color:var(--y);color:var(--y)}
+    .noise .vol-row{margin-top:13px}
+
+    /* ══ Goal dots ══ */
+    .gdot{display:inline-block;width:7px;height:7px;border-radius:50%;
+      border:1px solid var(--y);margin:0 2px;vertical-align:middle;opacity:.85}
+    .gdot.f{background:var(--y)}
+    .zen.brk .gdot{border-color:var(--gr)}
+    .zen.brk .gdot.f{background:var(--gr)}
+
+    /* ══ Break-track + reorder ══ */
+    .tk-brk{background:none;border:none;color:var(--mu);cursor:pointer;padding:5px 3px;
+      flex-shrink:0;transition:color .12s;opacity:.55}
+    .tk-brk svg{width:15px;height:15px;display:block}
+    .tk-brk:hover{color:var(--gr);opacity:1}
+    .tk-brk.on{color:var(--gr);opacity:1}
+    .track.drop-target{border-color:var(--y)}
+    .track[draggable]{cursor:grab}
+    .track.dragging{opacity:.4}
+
+    /* ══ Drag-files overlay ══ */
+    body.dropping::after{content:'drop audio files to add';position:fixed;inset:10px;z-index:200;
+      display:flex;align-items:center;justify-content:center;border:2px dashed var(--y);
+      border-radius:12px;background:rgba(14,14,14,.88);color:var(--y);
+      font:700 13px/1 var(--head);letter-spacing:.15em;text-transform:uppercase;pointer-events:none}
   </style>
 </head>
 <body>
@@ -375,6 +415,39 @@
           <button class="dur-step" data-d="brk" data-s="1">+</button>
         </span>
       </div>
+      <div class="dur">
+        <span class="dur-lbl">long break ·4th</span>
+        <span class="dur-ctl">
+          <button class="dur-step" data-d="longBrk" data-s="-1">−</button>
+          <span class="dur-val" id="dur-long">15m</span>
+          <button class="dur-step" data-d="longBrk" data-s="1">+</button>
+        </span>
+      </div>
+      <div class="dur">
+        <span class="dur-lbl">daily goal</span>
+        <span class="dur-ctl">
+          <button class="dur-step" data-d="goal" data-s="-1">−</button>
+          <span class="dur-val" id="dur-goal">4</span>
+          <button class="dur-step" data-d="goal" data-s="1">+</button>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ NOISE ═══ -->
+  <div class="sect-row">
+    <span class="sect-lbl">Noise</span>
+  </div>
+  <div class="noise">
+    <div class="noise-btns">
+      <button class="nz on" data-n="off">off</button>
+      <button class="nz" data-n="rain">rain</button>
+      <button class="nz" data-n="brown">brown</button>
+      <button class="nz" data-n="white">white</button>
+    </div>
+    <div class="vol-row">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg>
+      <input type="range" id="noise-vol" min="0" max="100" value="40">
     </div>
   </div>
 
@@ -441,6 +514,7 @@
 <!-- ═══════════ ZEN (fullscreen) ═══════════ -->
 <div class="zen" id="zen">
   <canvas id="zen-canvas"></canvas>
+  <button class="zen-viz-btn" id="zen-viz-btn" title="Visualizer style (V)">waves</button>
   <button class="zen-exit" id="zen-exit" title="Exit fullscreen (Esc)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>esc
   </button>
@@ -470,6 +544,7 @@
 </div>
 
 <audio id="audio" preload="metadata"></audio>
+<audio id="audio-b" preload="auto"></audio>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -492,10 +567,29 @@ let tracks=[];          // {id,name,url,duration}
 let current=-1;         // index into tracks
 let loopMode=0;         // 0 off · 1 all · 2 one
 let shuffle=false;
-let settings={focus:25,brk:5,sync:true,vol:80,pomOn:true};
+let settings={focus:25,brk:5,longBrk:15,goal:4,sync:true,vol:80,pomOn:true,
+              breakTrackId:null,noise:'off',noiseVol:40,zenViz:0};
 
-const audio=document.getElementById('audio');
+const audioA=document.getElementById('audio');
+const audioB=document.getElementById('audio-b');
+let audio=audioA;   // active element — the other one is used for crossfades
 const $=id=>document.getElementById(id);
+
+function master(){ return settings.vol/100; }
+
+/* volume fades (pomodoro transitions + loop crossfade) */
+const fades=new Map();
+function cancelFade(el){ const id=fades.get(el); if(id!==undefined){ clearInterval(id); fades.delete(el); } }
+function fadeEl(el,target,ms,done){
+  cancelFade(el);
+  const v0=el.volume, t0=performance.now();
+  const id=setInterval(()=>{
+    const k=Math.min(1,(performance.now()-t0)/ms);
+    el.volume=v0+(target-v0)*k;
+    if(k>=1){ cancelFade(el); if(done) done(); }
+  },32);
+  fades.set(el,id);
+}
 
 function loadSettings(){ try{Object.assign(settings,JSON.parse(localStorage.getItem(SET_KEY)||'{}'));}catch{} }
 function saveSettings(){ localStorage.setItem(SET_KEY,JSON.stringify(settings)); }
@@ -555,6 +649,7 @@ async function delTrack(id,ev){
   ev.stopPropagation();
   const i=tracks.findIndex(t=>t.id===id);
   if(i<0) return;
+  if(settings.breakTrackId===id){ settings.breakTrackId=null; saveSettings(); }
   const wasCurrent=(i===current);
   URL.revokeObjectURL(tracks[i].url);
   await idbDel(id);
@@ -565,12 +660,33 @@ async function delTrack(id,ev){
 }
 
 /* ════════════ Playback ════════════ */
+let xfading=false;
+function otherEl(){ return audio===audioA?audioB:audioA; }
 function play(i){
   if(i<0||i>=tracks.length) return;
   current=i;
+  xfading=false;
+  const o=otherEl(); cancelFade(o); o.pause();
+  cancelFade(audio);
+  audio.volume=master();
   audio.src=tracks[i].url;
   audio.play().catch(()=>{});
   updateNP(); renderList();
+}
+/* gapless loop-one: overlap the tail with a fresh start on the spare element */
+function maybeCrossfade(){
+  if(loopMode!==2||xfading||current<0||!audio.duration) return;
+  const rem=audio.duration-audio.currentTime;
+  if(rem>1.2||rem<=0) return;
+  xfading=true;
+  const o=otherEl(), old=audio;
+  o.src=tracks[current].url;
+  o.currentTime=0; o.volume=0;
+  o.play().then(()=>{
+    audio=o;
+    fadeEl(old,0,1000,()=>old.pause());
+    fadeEl(o,master(),1000,()=>{ xfading=false; });
+  }).catch(()=>{ xfading=false; });
 }
 function togglePlay(){
   if(current<0){ if(tracks.length) play(0); return; }
@@ -600,7 +716,22 @@ function updateNP(){
   const t=tracks[current];
   $('np-title').textContent=t?stripExt(t.name):'—';
   $('np-sub').innerHTML=t?`track <em>${current+1}</em> of ${tracks.length}`:'select a track to begin';
+  if('mediaSession' in navigator){
+    try{ navigator.mediaSession.metadata=t?new MediaMetadata({title:stripExt(t.name),artist:'FLOW'}):null; }catch{}
+  }
+  updateTray();
   syncMini();
+}
+function updateTray(){
+  if(!winAPI||!winAPI.setTray) return;
+  const t=tracks[current];
+  let s='FLOW';
+  if(pom.running){
+    const m=Math.floor(pom.remaining/60), ss=pom.remaining%60;
+    s+=` · ${phaseLabel()} ${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+  }
+  if(t&&!audio.paused) s+=' · ♪ '+stripExt(t.name);
+  winAPI.setTray(s);
 }
 
 /* play/pause icon + active-row bars */
@@ -612,6 +743,10 @@ function reflectPlayState(){
   document.querySelectorAll('.track').forEach((el,i)=>{
     el.classList.toggle('playing', i===current && playing);
   });
+  if('mediaSession' in navigator){
+    try{ navigator.mediaSession.playbackState=playing?'playing':'paused'; }catch{}
+  }
+  updateTray();
   syncMini();
 }
 
@@ -631,7 +766,7 @@ function renderList(){
     return;
   }
   list.innerHTML=tracks.map((t,i)=>`
-    <div class="track${i===current?' active':''}" data-i="${i}">
+    <div class="track${i===current?' active':''}" data-i="${i}" draggable="true">
       <div class="tk-ico">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
         <div class="tk-bars"><span></span><span></span><span></span></div>
@@ -640,10 +775,46 @@ function renderList(){
         <div class="tk-name">${esc(stripExt(t.name))}</div>
         <div class="tk-dur">${t.duration?fmt(t.duration):'—'}</div>
       </div>
+      <button class="tk-brk${t.id===settings.breakTrackId?' on':''}" data-id="${t.id}" title="Play this during breaks">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/></svg>
+      </button>
       <button class="tk-del" data-id="${t.id}" title="Remove">✕</button>
     </div>`).join('');
   list.querySelectorAll('.track').forEach(el=>{
     el.onclick=()=>play(+el.dataset.i);
+    el.addEventListener('dragstart',e=>{
+      e.dataTransfer.setData('text/flow-track',el.dataset.i);
+      e.dataTransfer.effectAllowed='move';
+      el.classList.add('dragging');
+    });
+    el.addEventListener('dragend',()=>el.classList.remove('dragging'));
+    el.addEventListener('dragover',e=>{
+      if(!e.dataTransfer.types.includes('text/flow-track')) return;
+      e.preventDefault(); e.dataTransfer.dropEffect='move';
+      el.classList.add('drop-target');
+    });
+    el.addEventListener('dragleave',()=>el.classList.remove('drop-target'));
+    el.addEventListener('drop',e=>{
+      if(!e.dataTransfer.types.includes('text/flow-track')) return;
+      e.preventDefault(); e.stopPropagation();
+      el.classList.remove('drop-target');
+      const from=+e.dataTransfer.getData('text/flow-track');
+      let to=+el.dataset.i;
+      if(from===to||isNaN(from)) return;
+      const cur=tracks[current];
+      const [moved]=tracks.splice(from,1);
+      tracks.splice(to,0,moved);
+      current=cur?tracks.indexOf(cur):-1;
+      saveOrder(); renderList(); updateNP();
+    });
+  });
+  list.querySelectorAll('.tk-brk').forEach(b=>{
+    b.onclick=e=>{
+      e.stopPropagation();
+      settings.breakTrackId=settings.breakTrackId===b.dataset.id?null:b.dataset.id;
+      saveSettings(); renderList();
+      toast(settings.breakTrackId?'break track set':'break track cleared');
+    };
   });
   list.querySelectorAll('.tk-del').forEach(b=>{
     b.onclick=e=>delTrack(b.dataset.id,e);
@@ -661,16 +832,27 @@ function reflectLoop(){
 function reflectShuffle(){ $('shuffle-btn').classList.toggle('toggled', shuffle); }
 
 /* ════════════ Pomodoro ════════════ */
-let pom={running:false, phase:'focus', remaining:25*60, sessions:0, timer:null};
+let pom={running:false, phase:'focus', long:false, remaining:25*60, total:25*60, sessions:0, timer:null};
+let resumeIdx=-1;   // track to come back to after a break-track swap
 function pomTodayKey(){ return 'flow_pom_'+new Date().toISOString().slice(0,10); }
-function loadPom(){ pom.sessions=+(localStorage.getItem(pomTodayKey())||0); pom.remaining=settings.focus*60; }
+function loadPom(){ pom.sessions=+(localStorage.getItem(pomTodayKey())||0); setRemaining(settings.focus*60); }
 function savePomSessions(){ localStorage.setItem(pomTodayKey(),pom.sessions); }
+function setRemaining(sec){ pom.remaining=sec; pom.total=sec; }
+function phaseLabel(){ return pom.phase==='focus'?'Focus':(pom.long?'Long break':'Break'); }
+function goalDots(){
+  if(!settings.goal) return '';
+  let d='';
+  for(let i=0;i<settings.goal;i++) d+=`<span class="gdot${i<pom.sessions?' f':''}"></span>`;
+  return d+' ';
+}
 
 function renderPom(){
   const m=Math.floor(pom.remaining/60), s=pom.remaining%60;
   $('pom-time').textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
-  $('pom-phase').textContent='Pomodoro · '+(pom.phase==='focus'?'Focus':'Break');
-  $('pom-count').innerHTML=`<em>${pom.sessions}</em> session${pom.sessions===1?'':'s'} today`;
+  $('pom-phase').textContent='Pomodoro · '+phaseLabel();
+  const cnt=settings.goal?`<em>${pom.sessions}</em>/${settings.goal} today`
+                         :`<em>${pom.sessions}</em> session${pom.sessions===1?'':'s'} today`;
+  $('pom-count').innerHTML=goalDots()+cnt;
   $('pom-start').textContent=pom.running?'Pause':'Start';
   const el=$('pom');
   el.classList.toggle('run',pom.running);
@@ -678,6 +860,13 @@ function renderPom(){
   el.classList.toggle('brk',pom.phase==='break');
   $('dur-focus').textContent=settings.focus+'m';
   $('dur-brk').textContent=settings.brk+'m';
+  $('dur-long').textContent=settings.longBrk+'m';
+  $('dur-goal').textContent=settings.goal||'off';
+  if(winAPI&&winAPI.setProgress){
+    if(pom.running) winAPI.setProgress(1-pom.remaining/pom.total, pom.phase==='focus'?'normal':'paused');
+    else winAPI.setProgress(-1,'normal');
+  }
+  updateTray();
   syncMini();
 }
 function pomTick(){
@@ -689,14 +878,16 @@ function pomStart(){
   if(pom.running){ pomPause(); return; }
   pom.running=true;
   pom.timer=setInterval(pomTick,1000);
-  if(settings.sync && pom.phase==='focus' && current>=0 && audio.paused) audio.play().catch(()=>{});
+  if(settings.sync && pom.phase==='focus' && current>=0 && audio.paused){
+    audio.volume=0; audio.play().catch(()=>{}); fadeEl(audio,master(),1500);
+  }
   renderPom();
 }
 function pomPause(){
   pom.running=false; clearInterval(pom.timer); renderPom();
 }
 function pomReset(){
-  pomPause(); pom.phase='focus'; pom.remaining=settings.focus*60; renderPom();
+  pomPause(); pom.phase='focus'; pom.long=false; setRemaining(settings.focus*60); renderPom();
 }
 function pomSkip(){ pomPhaseEnd(); }
 function pomResetCount(){
@@ -707,18 +898,54 @@ function reflectPomToggle(){
   $('pom-toggle').classList.toggle('toggled', settings.pomOn);
   if(!settings.pomOn && pom.running) pomPause();
 }
+
+/* music + noise transitions on phase change (gentle fades, optional break track) */
+function musicToBreak(){
+  if(!settings.sync) return;
+  noiseDuck(true);
+  const bi=settings.breakTrackId?tracks.findIndex(t=>t.id===settings.breakTrackId):-1;
+  if(bi>=0 && bi!==current){
+    resumeIdx=current;
+    fadeEl(audio,0,1200,()=>{ play(bi); audio.volume=0; fadeEl(audio,master(),1200); });
+  } else if(current>=0 && !audio.paused){
+    fadeEl(audio,0,1800,()=>audio.pause());
+  }
+}
+function musicToFocus(){
+  if(!settings.sync) return;
+  noiseDuck(false);
+  if(resumeIdx>=0 && resumeIdx<tracks.length && resumeIdx!==current){
+    const back=resumeIdx; resumeIdx=-1;
+    fadeEl(audio,0,1000,()=>{ play(back); audio.volume=0; fadeEl(audio,master(),1500); });
+  } else if(current>=0){
+    resumeIdx=-1;
+    cancelFade(audio);
+    if(audio.paused){ audio.volume=0; audio.play().catch(()=>{}); }
+    fadeEl(audio,master(),1500);
+  }
+}
+function notifyPhase(title,body){
+  if(document.hasFocus()) return;
+  try{ new Notification(title,{body,silent:true}); }catch{}
+}
 function pomPhaseEnd(){
   clearInterval(pom.timer);
   chime();
   if(pom.phase==='focus'){
     pom.sessions++; savePomSessions();
-    pom.phase='break'; pom.remaining=settings.brk*60;
-    if(settings.sync && current>=0) audio.pause();
-    toast('Focus done — break time');
+    pom.long=pom.sessions%4===0;   // every 4th session
+    pom.phase='break';
+    setRemaining((pom.long?settings.longBrk:settings.brk)*60);
+    musicToBreak();
+    const msg=pom.long?'Long break — you earned it':'Break time';
+    toast('Focus done — '+msg.toLowerCase());
+    notifyPhase('Focus done',msg+(settings.goal?` · ${pom.sessions}/${settings.goal} today`:''));
   } else {
-    pom.phase='focus'; pom.remaining=settings.focus*60;
-    if(settings.sync && current>=0) audio.play().catch(()=>{});
+    pom.phase='focus'; pom.long=false;
+    setRemaining(settings.focus*60);
+    musicToFocus();
     toast('Break over — back to focus');
+    notifyPhase('Break over','Back to focus');
   }
   if(pom.running) pom.timer=setInterval(pomTick,1000);
   renderPom();
@@ -740,6 +967,50 @@ function chime(){
       o.start(t0); o.stop(t0+0.5);
     });
   }catch{}
+}
+
+/* ════════════ Noise generator ════════════ */
+let noiseSrc=null, noiseGain=null, noiseDucked=false;
+function noiseBuf(type){
+  const len=actx.sampleRate*4, buf=actx.createBuffer(1,len,actx.sampleRate), d=buf.getChannelData(0);
+  if(type==='white'){ for(let i=0;i<len;i++) d[i]=Math.random()*2-1; }
+  else if(type==='brown'){ let l=0; for(let i=0;i<len;i++){ const w=Math.random()*2-1; l=(l+0.02*w)/1.02; d[i]=l*3.5; } }
+  else { // rain ≈ pink noise (Kellet approx), lowpassed live
+    let b0=0,b1=0,b2=0;
+    for(let i=0;i<len;i++){ const w=Math.random()*2-1;
+      b0=0.997*b0+0.0299*w; b1=0.985*b1+0.0563*w; b2=0.95*b2+0.115*w;
+      d[i]=(b0+b1+b2+w*0.1849)*0.6; }
+  }
+  return buf;
+}
+function noiseTarget(){ return (noiseDucked?0:1)*(settings.noiseVol/100)*0.5; }
+function applyNoiseGain(ms){
+  if(!noiseGain||!actx) return;
+  const t=actx.currentTime;
+  noiseGain.gain.cancelScheduledValues(t);
+  noiseGain.gain.setValueAtTime(noiseGain.gain.value,t);
+  noiseGain.gain.linearRampToValueAtTime(noiseTarget(),t+(ms||300)/1000);
+}
+function noiseDuck(on){ noiseDucked=on; if(settings.noise!=='off') applyNoiseGain(1500); }
+function setNoise(type){
+  settings.noise=type; saveSettings(); reflectNoise();
+  if(noiseSrc){ try{noiseSrc.stop();}catch{} try{noiseSrc.disconnect();}catch{} noiseSrc=null; }
+  if(type==='off') return;
+  ensureGraph();
+  if(!actx||!analyser) return;
+  if(!noiseGain){ noiseGain=actx.createGain(); noiseGain.gain.value=0; noiseGain.connect(analyser); }
+  noiseSrc=actx.createBufferSource();
+  noiseSrc.buffer=noiseBuf(type);
+  noiseSrc.loop=true;
+  if(type==='rain'){
+    const f=actx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=900;
+    noiseSrc.connect(f); f.connect(noiseGain);
+  } else noiseSrc.connect(noiseGain);
+  noiseSrc.start();
+  applyNoiseGain(400);
+}
+function reflectNoise(){
+  document.querySelectorAll('.nz').forEach(b=>b.classList.toggle('on',b.dataset.n===settings.noise));
 }
 
 /* ════════════ Files ════════════ */
@@ -785,7 +1056,7 @@ function syncMini(force){
   if(pom.running){
     const m=Math.floor(pom.remaining/60), s=pom.remaining%60;
     $('mini-time').textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
-    $('mini-phase').textContent=pom.phase==='focus'?'Focus':'Break';
+    $('mini-phase').textContent=phaseLabel();
     $('mini').classList.toggle('brk',pom.phase==='break');
   }
   if(miniOn){
@@ -801,21 +1072,21 @@ const ZEN_M=15;                          // spectrum bands feeding the waves
 const zenBands=new Float32Array(ZEN_M);  // temporally smoothed
 let zenGlow=0;                           // smoothed bass energy → orb
 
-function ensureAnalyser(){
+function ensureGraph(){
   try{
     actx=actx||new (window.AudioContext||window.webkitAudioContext)();
     if(actx.state==='suspended') actx.resume();
     if(!analyser){
-      // can only be created once per <audio> element — afterwards all audio routes through the context
-      const src=actx.createMediaElementSource(audio);
+      // sources can only be created once per <audio> element — afterwards all audio routes through the context
       analyser=actx.createAnalyser();
       analyser.fftSize=256;
       analyser.smoothingTimeConstant=.82;
-      src.connect(analyser);
+      actx.createMediaElementSource(audioA).connect(analyser);
+      actx.createMediaElementSource(audioB).connect(analyser);
       analyser.connect(actx.destination);
       zenData=new Uint8Array(analyser.frequencyBinCount);
     }
-  }catch(e){ console.error('analyser failed',e); }
+  }catch(e){ console.error('audio graph failed',e); }
 }
 
 function sizeZen(){
@@ -829,7 +1100,7 @@ function sizeZen(){
 function enterZen(){
   if(zenOn) return;
   if(miniOn) exitMini();
-  ensureAnalyser();
+  ensureGraph();
   zenOn=true;
   document.body.classList.add('zen-mode');
   if(winAPI) winAPI.setFullscreen(true);
@@ -862,13 +1133,30 @@ function zSet(id,val,html){
   if(html) $(id).innerHTML=val; else $(id).textContent=val;
 }
 
+const ZEN_VIZ=['waves','ring','drift'];
+let zenParts=null;
+function cycleZenViz(){
+  settings.zenViz=(settings.zenViz+1)%ZEN_VIZ.length;
+  saveSettings();
+  $('zen-viz-btn').textContent=ZEN_VIZ[settings.zenViz];
+}
+
 function zenFrame(){
   if(!zenOn) return;
   /* ── session + track info ── */
-  const m=Math.floor(pom.remaining/60), s=pom.remaining%60;
-  zSet('zen-time',String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'));
-  zSet('zen-phase',(pom.phase==='focus'?'Focus':'Break')+(pom.running?'':' · paused'));
-  zSet('zen-count',`<em>${pom.sessions}</em> session${pom.sessions===1?'':'s'} today`,true);
+  const idle=!pom.running && pom.remaining===pom.total;
+  if(idle){
+    const now=new Date();
+    zSet('zen-time',String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0'));
+    zSet('zen-phase',now.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}));
+  } else {
+    const m=Math.floor(pom.remaining/60), s=pom.remaining%60;
+    zSet('zen-time',String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'));
+    zSet('zen-phase',phaseLabel()+(pom.running?'':' · paused'));
+  }
+  const cnt=settings.goal?`<em>${pom.sessions}</em>/${settings.goal} today`
+                         :`<em>${pom.sessions}</em> session${pom.sessions===1?'':'s'} today`;
+  zSet('zen-count',goalDots()+cnt,true);
   zSet('zen-pom-btn',pom.running?'pause':(pom.phase==='focus'?'start focus':'start break'));
   $('zen').classList.toggle('brk',pom.phase==='break');
   const t=tracks[current], playing=!audio.paused&&current>=0;
@@ -876,7 +1164,8 @@ function zenFrame(){
   zSet('zen-tt',t?fmt(audio.currentTime)+' / '+fmt(audio.duration||t.duration||0):'no track');
   const ico=playing?'<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>':'<path d="M8 5v14l11-7z"/>';
   zSet('zen-play-ico',ico,true);
-  /* ── visualizer: breathing orb + flowing layered waves ── */
+
+  /* ── visualizer ── */
   if(zenCtx){
     if(analyser) analyser.getByteFrequencyData(zenData);
     const W=zenW, H=zenH;
@@ -896,37 +1185,91 @@ function zenFrame(){
     zenGlow+=(bass-zenGlow)*0.07;
     const col=pom.phase==='break'?'92,219,125':'167,139,250';
     const tm=performance.now()/1000;
+    const cx=W/2, cy=H*0.44;
 
-    // soft orb breathing with the bass, behind the timer
-    const cx=W/2, cy=H*0.44, r=Math.min(W,H)*(0.20+zenGlow*0.26);
+    // soft orb breathing with the bass, behind the timer (all modes)
+    const r=Math.min(W,H)*(0.20+zenGlow*0.26);
     const g=zenCtx.createRadialGradient(cx,cy,0,cx,cy,r);
     g.addColorStop(0,`rgba(${col},${(0.10+zenGlow*0.30).toFixed(3)})`);
     g.addColorStop(1,`rgba(${col},0)`);
     zenCtx.fillStyle=g;
     zenCtx.fillRect(cx-r,cy-r,r*2,r*2);
 
-    // three flowing curves along the bottom, mirrored so bass swells in the middle
-    const P=29, c=(P-1)/2, xs=new Array(P), ys=new Array(P);
-    for(let L=0;L<3;L++){
-      const amp=H*(0.34-L*0.09), alpha=[0.28,0.15,0.08][L], drift=tm*(0.5+L*0.35);
-      for(let i=0;i<P;i++){
-        const v=zenBands[Math.min(ZEN_M-1,Math.abs(i-c))];
-        xs[i]=i/(P-1)*W;
-        ys[i]=H-(0.03+v*v)*amp+Math.sin(drift+i*0.55+L*2.1)*H*0.012*(0.4+v*2);
-      }
-      zenCtx.beginPath();
-      zenCtx.moveTo(0,H);
-      zenCtx.lineTo(xs[0],ys[0]);
-      for(let i=1;i<P-1;i++)
-        zenCtx.quadraticCurveTo(xs[i],ys[i],(xs[i]+xs[i+1])/2,(ys[i]+ys[i+1])/2);
-      zenCtx.lineTo(xs[P-1],ys[P-1]);
-      zenCtx.lineTo(W,H);
-      zenCtx.closePath();
-      zenCtx.fillStyle=`rgba(${col},${alpha})`;
-      zenCtx.fill();
-    }
+    const mode=ZEN_VIZ[settings.zenViz]||'waves';
+    if(mode==='ring') drawRing(W,H,cx,cy,col,tm);
+    else if(mode==='drift') drawDrift(W,H,col,tm);
+    else drawWaves(W,H,col,tm);
   }
   zenRaf=requestAnimationFrame(zenFrame);
+}
+
+/* three flowing curves along the bottom, mirrored so bass swells in the middle */
+function drawWaves(W,H,col,tm){
+  const P=29, c=(P-1)/2, xs=new Array(P), ys=new Array(P);
+  for(let L=0;L<3;L++){
+    const amp=H*(0.34-L*0.09), alpha=[0.28,0.15,0.08][L], drift=tm*(0.5+L*0.35);
+    for(let i=0;i<P;i++){
+      const v=zenBands[Math.min(ZEN_M-1,Math.abs(i-c))];
+      xs[i]=i/(P-1)*W;
+      ys[i]=H-(0.03+v*v)*amp+Math.sin(drift+i*0.55+L*2.1)*H*0.012*(0.4+v*2);
+    }
+    zenCtx.beginPath();
+    zenCtx.moveTo(0,H);
+    zenCtx.lineTo(xs[0],ys[0]);
+    for(let i=1;i<P-1;i++)
+      zenCtx.quadraticCurveTo(xs[i],ys[i],(xs[i]+xs[i+1])/2,(ys[i]+ys[i+1])/2);
+    zenCtx.lineTo(xs[P-1],ys[P-1]);
+    zenCtx.lineTo(W,H);
+    zenCtx.closePath();
+    zenCtx.fillStyle=`rgba(${col},${alpha})`;
+    zenCtx.fill();
+  }
+}
+
+/* organic ring orbiting the timer, radius riding the spectrum */
+function drawRing(W,H,cx,cy,col,tm){
+  const K=96, R0=Math.min(W,H)*0.27, xs=new Array(K), ys=new Array(K);
+  for(let k=0;k<K;k++){
+    const mir=Math.abs(((k+K/2)%K)-K/2)/(K/2);   // mirror so left/right match
+    const v=zenBands[Math.min(ZEN_M-1,Math.round(mir*(ZEN_M-1)))];
+    const ang=(k/K)*Math.PI*2-Math.PI/2+Math.sin(tm*0.15)*0.3;
+    const rr=R0*(1+v*v*0.85)+Math.sin(tm*0.8+k*0.4)*3;
+    xs[k]=cx+Math.cos(ang)*rr; ys[k]=cy+Math.sin(ang)*rr;
+  }
+  zenCtx.beginPath();
+  zenCtx.moveTo((xs[K-1]+xs[0])/2,(ys[K-1]+ys[0])/2);
+  for(let k=0;k<K;k++){
+    const x2=xs[(k+1)%K], y2=ys[(k+1)%K];
+    zenCtx.quadraticCurveTo(xs[k],ys[k],(xs[k]+x2)/2,(ys[k]+y2)/2);
+  }
+  zenCtx.closePath();
+  zenCtx.fillStyle=`rgba(${col},0.05)`;
+  zenCtx.fill();
+  zenCtx.strokeStyle=`rgba(${col},0.55)`;
+  zenCtx.lineWidth=1.6;
+  zenCtx.stroke();
+}
+
+/* slow particle field drifting upward, energized by the music */
+function drawDrift(W,H,col,tm){
+  if(!zenParts){
+    zenParts=[];
+    for(let i=0;i<90;i++) zenParts.push({
+      x:Math.random(), y:Math.random(), r:1+Math.random()*2.5,
+      sp:0.2+Math.random()*0.6, band:Math.floor(Math.random()*ZEN_M), ph:Math.random()*6.2832
+    });
+  }
+  for(const p of zenParts){
+    const v=zenBands[p.band];
+    p.y-=p.sp*(0.0006+v*0.004);
+    p.x+=Math.sin(tm*0.4+p.ph)*0.0004;
+    if(p.y<-0.03){ p.y=1.03; p.x=Math.random(); }
+    if(p.x<-0.03) p.x=1.03; else if(p.x>1.03) p.x=-0.03;
+    zenCtx.beginPath();
+    zenCtx.arc(p.x*W,p.y*H,p.r*(0.7+v*1.6),0,6.2832);
+    zenCtx.fillStyle=`rgba(${col},${(0.06+v*0.5).toFixed(3)})`;
+    zenCtx.fill();
+  }
 }
 
 /* ════════════ Wire up ════════════ */
@@ -946,6 +1289,8 @@ function init(){
   // zen / fullscreen
   $('nav-zen').onclick=enterZen;
   $('zen-exit').onclick=exitZen;
+  $('zen-viz-btn').onclick=cycleZenViz;
+  $('zen-viz-btn').textContent=ZEN_VIZ[settings.zenViz]||'waves';
   $('zen-play').onclick=togglePlay;
   $('zen-prev').onclick=prevTrack;
   $('zen-next').onclick=()=>nextTrack(false);
@@ -956,7 +1301,7 @@ function init(){
 
   loadSettings();
   // volume
-  audio.volume=settings.vol/100;
+  audioA.volume=audioB.volume=master();
   $('vol').value=settings.vol;
   $('vol').style.setProperty('--vpct',settings.vol+'%');
 
@@ -980,23 +1325,68 @@ function init(){
 
   // volume control
   $('vol').addEventListener('input',e=>{
-    const v=+e.target.value; audio.volume=v/100; settings.vol=v; saveSettings();
+    const v=+e.target.value; settings.vol=v; saveSettings();
+    cancelFade(audio); audio.volume=master();
     e.target.style.setProperty('--vpct',v+'%');
   });
 
-  // audio events
-  audio.addEventListener('timeupdate',()=>{
-    if(!audio.duration) return;
-    if(!seeking){
-      const p=(audio.currentTime/audio.duration)*1000;
-      seek.value=p; seek.style.setProperty('--pct',(p/10)+'%');
-    }
-    $('t-cur').textContent=fmt(audio.currentTime);
+  // audio events — attached to BOTH elements; guards keep the inactive one quiet
+  for(const el of [audioA,audioB]){
+    el.addEventListener('timeupdate',e=>{
+      if(e.target!==audio) return;
+      maybeCrossfade();
+      if(!audio.duration) return;
+      if(!seeking){
+        const p=(audio.currentTime/audio.duration)*1000;
+        seek.value=p; seek.style.setProperty('--pct',(p/10)+'%');
+      }
+      $('t-cur').textContent=fmt(audio.currentTime);
+    });
+    el.addEventListener('loadedmetadata',e=>{ if(e.target===audio) $('t-dur').textContent=fmt(audio.duration); });
+    el.addEventListener('play',reflectPlayState);
+    el.addEventListener('pause',reflectPlayState);
+    el.addEventListener('ended',e=>{ if(e.target===audio) nextTrack(true); });
+  }
+
+  // media keys (Windows SMTC)
+  if('mediaSession' in navigator){
+    try{
+      navigator.mediaSession.setActionHandler('play',togglePlay);
+      navigator.mediaSession.setActionHandler('pause',togglePlay);
+      navigator.mediaSession.setActionHandler('previoustrack',prevTrack);
+      navigator.mediaSession.setActionHandler('nexttrack',()=>nextTrack(false));
+    }catch{}
+  }
+  if(winAPI&&winAPI.onMedia) winAPI.onMedia(act=>{ act==='next'?nextTrack(false):togglePlay(); });
+
+  // noise generator
+  document.querySelectorAll('.nz').forEach(b=>{ b.onclick=()=>setNoise(b.dataset.n); });
+  $('noise-vol').value=settings.noiseVol;
+  $('noise-vol').style.setProperty('--vpct',settings.noiseVol+'%');
+  $('noise-vol').addEventListener('input',e=>{
+    settings.noiseVol=+e.target.value; saveSettings();
+    e.target.style.setProperty('--vpct',settings.noiseVol+'%');
+    applyNoiseGain(120);
   });
-  audio.addEventListener('loadedmetadata',()=>{ $('t-dur').textContent=fmt(audio.duration); });
-  audio.addEventListener('play',reflectPlayState);
-  audio.addEventListener('pause',reflectPlayState);
-  audio.addEventListener('ended',()=>nextTrack(true));
+  reflectNoise();
+  if(settings.noise!=='off') setNoise(settings.noise);
+
+  // drop audio files anywhere to add them
+  document.addEventListener('dragover',e=>{
+    if(e.dataTransfer&&e.dataTransfer.types.includes('Files')){
+      e.preventDefault(); document.body.classList.add('dropping');
+    }
+  });
+  document.addEventListener('dragleave',e=>{
+    if(!e.relatedTarget) document.body.classList.remove('dropping');
+  });
+  document.addEventListener('drop',e=>{
+    document.body.classList.remove('dropping');
+    if(e.dataTransfer&&e.dataTransfer.files.length){
+      e.preventDefault();
+      addFiles(e.dataTransfer.files);
+    }
+  });
 
   // pomodoro
   $('pom-start').onclick=pomStart;
@@ -1006,23 +1396,27 @@ function init(){
   $('pom-toggle').onclick=()=>{ settings.pomOn=!settings.pomOn; saveSettings(); reflectPomToggle(); };
   $('pom-sync').onclick=()=>{ settings.sync=!settings.sync; saveSettings(); $('pom-sync').classList.toggle('on',settings.sync); };
   $('pom-sync').classList.toggle('on',settings.sync);
+  const durCfg={focus:[1,180],brk:[1,60],longBrk:[5,90],goal:[0,20]};
   document.querySelectorAll('.dur-step').forEach(b=>{
     b.onclick=()=>{
-      const key=b.dataset.d==='focus'?'focus':'brk';
-      const step=+b.dataset.s;
-      settings[key]=Math.max(1,Math.min(180,settings[key]+step));
+      const key=b.dataset.d, [lo,hi]=durCfg[key], step=+b.dataset.s;
+      settings[key]=Math.max(lo,Math.min(hi,settings[key]+step));
       saveSettings();
-      if(!pom.running && ((key==='focus'&&pom.phase==='focus')||(key==='brk'&&pom.phase==='break')))
-        pom.remaining=settings[key]*60;
+      if(!pom.running){
+        if(key==='focus'&&pom.phase==='focus') setRemaining(settings.focus*60);
+        if(key==='brk'&&pom.phase==='break'&&!pom.long) setRemaining(settings.brk*60);
+        if(key==='longBrk'&&pom.phase==='break'&&pom.long) setRemaining(settings.longBrk*60);
+      }
       renderPom();
     };
   });
 
-  // keyboard: space = play/pause · F = zen · Esc = exit zen
+  // keyboard: space = play/pause · F = zen · V = visualizer style · Esc = exit zen
   document.addEventListener('keydown',e=>{
     if(e.code==='Space' && e.target.tagName!=='INPUT'){ e.preventDefault(); togglePlay(); }
     else if(e.key==='Escape' && zenOn) exitZen();
     else if((e.key==='f'||e.key==='F') && e.target.tagName!=='INPUT'){ zenOn?exitZen():enterZen(); }
+    else if((e.key==='v'||e.key==='V') && zenOn) cycleZenViz();
   });
 
   reflectLoop(); reflectShuffle();
