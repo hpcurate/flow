@@ -1,0 +1,46 @@
+{
+  "name": "flow",
+  "version": "1.0.0",
+  "description": "FLOW — Ambiance / Focus player",
+  "main": "main.js",
+  "author": "Hugo",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-packager . FLOW --platform=win32 --arch=x64 --icon=build/icon.ico --out=dist --overwrite --prune=true --ignore=\"(^/dist|^/\\.git|^/gui-check\\.js|^/shot-.*\\.png|^/SESSION-LOG\\.md)\"",
+    "dist": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.hugo.flow",
+    "productName": "FLOW",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "index.html",
+      "main.js",
+      "preload.js",
+      "fonts/**"
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "FLOW-portable.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "FLOW-Setup-${version}.exe"
+    }
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.0.1",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}

@@ -1,0 +1,11 @@
+# dependencies — restored with `npm install`
+node_modules/
+
+# build output — regenerated with `npm run pack`
+dist/
+
+# GUI-verification screenshots from gui-check.js
+shot-*.png
+
+# logs
+npm-debug.log*

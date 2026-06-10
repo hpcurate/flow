@@ -6,8 +6,7 @@
   <meta name="theme-color" content="#0e0e0e">
   <title>FLOW</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230e0e0e'/%3E%3Cpath d='M12 9v10.5a3 3 0 1 1-2-2.83V8l9-2v8.5a3 3 0 1 1-2-2.83V7z' fill='%23A78BFA'/%3E%3C/svg%3E">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="fonts/fonts.css">
   <style>
     :root {
       --bg:#0e0e0e; --s1:#161616; --s2:#1e1e1e; --bd:#272727;
@@ -18,11 +17,13 @@
       --head:'Syne',sans-serif;
     }
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-    html,body{height:100%}
+    html,body{height:100%;overflow:hidden}
     body{background:var(--bg);color:var(--tx);font-family:var(--mono);font-size:14px;
-         overscroll-behavior:none;min-height:100dvh}
+         overscroll-behavior:none;height:100vh;user-select:none}
+    ::-webkit-scrollbar{width:0;height:0;display:none}
+    *{scrollbar-width:none}
 
-    .wrap{max-width:680px;margin:0 auto;padding:36px 20px calc(40px + env(safe-area-inset-bottom));}
+    .wrap{display:flex;flex-direction:column;height:100vh;max-width:680px;margin:0 auto}
 
     /* ── Header ── */
     .top{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:30px}
@@ -171,21 +172,134 @@
     .toast.show{transform:translateX(-50%) translateY(0)}
 
     input[type=file]{display:none}
+
+    /* ══ App chrome ══ */
+    .titlebar{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;
+              padding:13px 16px 11px;-webkit-app-region:drag;flex-shrink:0}
+    .tb-label{font:700 9px/1 var(--head);letter-spacing:.16em;text-transform:uppercase;color:var(--mu);margin-bottom:6px}
+    .tb-logo{font:800 30px/1 var(--head);letter-spacing:-.02em}
+    .tb-logo em{color:var(--y);font-style:normal}
+    .win-ctl{display:flex;gap:3px;-webkit-app-region:no-drag}
+    .wb{-webkit-app-region:no-drag;background:none;border:none;border-radius:6px;color:var(--mu);
+        width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .12s}
+    .wb svg{width:15px;height:15px}
+    .wb:hover{background:var(--s2);color:var(--tx)}
+    .wb.close:hover{background:var(--re);color:#fff}
+
+    .views{flex:1;min-height:0;display:flex;flex-direction:column}
+    .view{display:none;flex:1;min-height:0;flex-direction:column}
+    .view.active{display:flex}
+    .scroll{flex:1;min-height:0;overflow-y:auto;padding:6px 18px 16px}
+
+    .sect-row{display:flex;align-items:center;justify-content:space-between;margin:4px 0 11px}
+    .sect-lbl{font:700 9px/1 var(--head);letter-spacing:.15em;text-transform:uppercase;color:var(--mu)}
+
+    .view[data-view=tracks] .pl-head{margin:8px 18px 0;padding-bottom:11px;justify-content:flex-start;gap:11px}
+    .view[data-view=tracks] .pl-head .ghost-btn{margin-left:auto}
+    .view[data-view=tracks] .scroll{padding-top:10px}
+
+    .nav{display:flex;gap:6px;padding:10px 16px calc(13px + env(safe-area-inset-bottom));
+         border-top:1px solid var(--bd);flex-shrink:0}
+    .nav-btn{flex:1;background:var(--s1);border:1px solid var(--bd);border-radius:8px;color:var(--mu);
+             font:700 10px/1 var(--head);letter-spacing:.1em;text-transform:uppercase;
+             padding:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:all .12s}
+    .nav-btn svg{width:15px;height:15px}
+    .nav-btn:hover{color:var(--tx);border-color:var(--mu)}
+    .nav-btn.active{color:var(--y);border-color:var(--y);background:var(--yd)}
+
+    /* ══ Mini player ══ */
+    .mini{display:none}
+    body.mini-mode .wrap{display:none}
+    body.mini-mode .mini{display:flex;flex-direction:column;height:100vh;
+         -webkit-app-region:drag;background:var(--bg);padding:11px 13px}
+    .mini-main{display:flex;align-items:center;gap:11px;flex:1;min-height:0}
+    .mini-play{-webkit-app-region:no-drag;background:var(--y);border:none;border-radius:50%;
+         width:38px;height:38px;color:#0e0e0e;display:flex;align-items:center;justify-content:center;
+         cursor:pointer;flex-shrink:0;transition:opacity .12s}
+    .mini-play:hover{opacity:.88}
+    .mini-play svg{width:18px;height:18px}
+    .mini-info{flex:1;min-width:0;-webkit-app-region:drag}
+    .mini-title{font:700 13px/1.2 var(--head);color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .mini-sub{font:400 10px/1 var(--mono);color:var(--mu);margin-top:4px;letter-spacing:.04em}
+    .mini-ctrl{-webkit-app-region:no-drag;background:none;border:none;color:var(--mu);cursor:pointer;
+         width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:6px;
+         transition:all .12s;flex-shrink:0}
+    .mini-ctrl:hover{color:var(--tx);background:var(--s2)}
+    .mini-ctrl svg{width:17px;height:17px}
+    .mini-pom{display:none;align-items:center;gap:9px;padding-top:9px;margin-top:9px;border-top:1px solid var(--bd)}
+    .mini-dot{width:7px;height:7px;border-radius:50%;background:var(--y);flex-shrink:0}
+    .mini.brk .mini-dot{background:var(--gr)}
+    .mini-phase{font:700 9px/1 var(--head);letter-spacing:.12em;text-transform:uppercase;color:var(--mu)}
+    .mini.brk .mini-phase{color:var(--gr)}
+    .mini-time{font:800 15px/1 var(--head);color:var(--tx);font-variant-numeric:tabular-nums;margin-left:auto}
+    .mini-ctrl.sm{width:28px;height:28px}
+    .mini-ctrl.sm svg{width:15px;height:15px}
+
+    /* ══ Zen (fullscreen visualizer) ══ */
+    .zen{display:none}
+    body.zen-mode .wrap{display:none}
+    body.zen-mode .zen{display:block;position:fixed;inset:0;background:var(--bg);overflow:hidden}
+    body.zen-mode.hide-cursor{cursor:none}
+    #zen-canvas{position:absolute;inset:0;width:100%;height:100%}
+    .zen-exit{position:absolute;top:18px;right:18px;z-index:3;background:rgba(22,22,22,.72);
+      border:1px solid var(--bd);border-radius:7px;color:var(--mu);font:400 10px/1 var(--mono);
+      letter-spacing:.1em;text-transform:uppercase;padding:9px 13px;cursor:pointer;
+      display:flex;align-items:center;gap:8px;transition:all .15s}
+    .zen-exit:hover{color:var(--tx);border-color:var(--mu)}
+    .zen-exit svg{width:14px;height:14px}
+    .zen-center{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;text-align:center;padding-bottom:12vh;pointer-events:none}
+    .zen-center button{pointer-events:auto}
+    .zen-phase{font:700 11px/1 var(--head);letter-spacing:.32em;text-transform:uppercase;
+      color:var(--y);margin-bottom:20px}
+    .zen.brk .zen-phase{color:var(--gr)}
+    .zen-time{font:800 clamp(72px,15vw,160px)/1 var(--head);letter-spacing:.01em;
+      font-variant-numeric:tabular-nums;color:var(--tx)}
+    .zen-count{font:400 11px/1 var(--mono);color:var(--mu);letter-spacing:.08em;margin-top:20px}
+    .zen-count em{color:var(--y);font-style:normal}
+    .zen.brk .zen-count em{color:var(--gr)}
+    .zen-pom-btn{margin-top:28px;background:none;border:1px solid var(--bd);border-radius:7px;
+      color:var(--mu);font:700 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;
+      padding:12px 24px;cursor:pointer;transition:all .15s}
+    .zen-pom-btn:hover{border-color:var(--y);color:var(--y)}
+    .zen-bottom{position:absolute;left:0;right:0;bottom:0;z-index:2;display:flex;align-items:center;
+      justify-content:space-between;gap:16px;padding:0 28px calc(24px + env(safe-area-inset-bottom))}
+    .zen-track{font:700 16px/1.3 var(--head);color:var(--tx);max-width:46vw;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .zen-tt{font:400 10px/1 var(--mono);color:var(--mu);letter-spacing:.05em;margin-top:7px;
+      font-variant-numeric:tabular-nums}
+    .zen-ctrls{display:flex;align-items:center;gap:6px;flex-shrink:0}
+    .zen-exit,.zen-bottom{transition:opacity .35s}
+    body.zen-mode.hide-cursor .zen-exit,body.zen-mode.hide-cursor .zen-bottom{opacity:0}
   </style>
 </head>
 <body>
 <div class="wrap">
 
-  <div class="top">
+  <!-- ═══ TITLE BAR (drag region + window controls) ═══ -->
+  <div class="titlebar">
     <div>
-      <div class="label">Ambiance / Focus</div>
-      <div class="logo">FLOW<em>.</em></div>
+      <div class="tb-label">Ambiance / Focus</div>
+      <div class="tb-logo">FLOW<em>.</em></div>
     </div>
-    <div class="top-act">
-      <button class="ghost-btn" id="pom-toggle">pomodoro</button>
-      <button class="ghost-btn" id="add-top">+ add tracks</button>
+    <div class="win-ctl">
+      <button class="wb" id="mini-btn" title="Miniplayer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4v6H4"/><path d="M14 20v-6h6"/><path d="M10 10L4 4"/><path d="M14 14l6 6"/></svg>
+      </button>
+      <button class="wb" id="win-min" title="Minimize">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+      </button>
+      <button class="wb close" id="win-close" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
     </div>
   </div>
+
+  <div class="views">
+
+  <!-- ═══════════ PLAYER VIEW ═══════════ -->
+  <section class="view active" data-view="player">
+  <div class="scroll">
 
   <!-- ═══ NOW PLAYING ═══ -->
   <div class="player">
@@ -225,6 +339,10 @@
   </div>
 
   <!-- ═══ POMODORO ═══ -->
+  <div class="sect-row">
+    <span class="sect-lbl">Focus timer</span>
+    <button class="ghost-btn toggled" id="pom-toggle">pomodoro</button>
+  </div>
   <div class="pom" id="pom">
     <div class="pom-head">
       <span class="pom-phase" id="pom-phase">Pomodoro · Focus</span>
@@ -260,14 +378,95 @@
     </div>
   </div>
 
-  <!-- ═══ PLAYLIST ═══ -->
-  <div class="pl-head">
-    <span class="pl-title">Tracks</span>
-    <span class="pl-meta" id="pl-meta">0 tracks</span>
   </div>
-  <div id="pl-list"></div>
+  </section>
+
+  <!-- ═══════════ TRACKS VIEW ═══════════ -->
+  <section class="view" data-view="tracks">
+    <div class="pl-head">
+      <span class="pl-title">Tracks</span>
+      <span class="pl-meta" id="pl-meta">0 tracks</span>
+      <button class="ghost-btn" id="add-top">+ add</button>
+    </div>
+    <div class="scroll">
+      <div id="pl-list"></div>
+    </div>
+  </section>
+
+  </div><!-- /views -->
+
+  <!-- ═══ BOTTOM NAV ═══ -->
+  <nav class="nav">
+    <button class="nav-btn active" data-go="player">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>Player
+    </button>
+    <button class="nav-btn" data-go="tracks">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Tracks
+    </button>
+    <button class="nav-btn" id="nav-zen" title="Fullscreen zen mode (F)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Zen
+    </button>
+  </nav>
 
   <input type="file" id="file-input" accept="audio/*,.mp3,.m4a,.flac,.ogg,.wav" multiple>
+</div>
+
+<!-- ═══════════ MINIPLAYER ═══════════ -->
+<div class="mini" id="mini">
+  <div class="mini-main">
+    <button class="mini-play" id="mini-play" title="Play / Pause">
+      <svg id="mini-play-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+    </button>
+    <div class="mini-info">
+      <div class="mini-title" id="mini-title">—</div>
+      <div class="mini-sub" id="mini-sub">no track</div>
+    </div>
+    <button class="mini-ctrl" id="mini-next" title="Next">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM4 6l9 6-9 6z"/></svg>
+    </button>
+    <button class="mini-ctrl" id="mini-expand" title="Expand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M21 3l-8 8"/><path d="M9 21H3v-6"/><path d="M3 21l8-8"/></svg>
+    </button>
+  </div>
+  <div class="mini-pom" id="mini-pom">
+    <span class="mini-dot"></span>
+    <span class="mini-phase" id="mini-phase">Focus</span>
+    <span class="mini-time" id="mini-time">25:00</span>
+    <button class="mini-ctrl sm" id="mini-pom-toggle" title="Pause / Resume">
+      <svg id="mini-pom-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════ ZEN (fullscreen) ═══════════ -->
+<div class="zen" id="zen">
+  <canvas id="zen-canvas"></canvas>
+  <button class="zen-exit" id="zen-exit" title="Exit fullscreen (Esc)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>esc
+  </button>
+  <div class="zen-center">
+    <div class="zen-phase" id="zen-phase">Focus</div>
+    <div class="zen-time" id="zen-time">25:00</div>
+    <div class="zen-count" id="zen-count">0 sessions today</div>
+    <button class="zen-pom-btn" id="zen-pom-btn">start focus</button>
+  </div>
+  <div class="zen-bottom">
+    <div style="min-width:0">
+      <div class="zen-track" id="zen-track">—</div>
+      <div class="zen-tt" id="zen-tt">no track</div>
+    </div>
+    <div class="zen-ctrls">
+      <button class="ctrl" id="zen-prev" title="Previous">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM20 6v12l-9-6z"/></svg>
+      </button>
+      <button class="ctrl play" id="zen-play" title="Play / Pause">
+        <svg id="zen-play-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button class="ctrl" id="zen-next" title="Next">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM4 6l9 6-9 6z"/></svg>
+      </button>
+    </div>
+  </div>
 </div>
 
 <audio id="audio" preload="metadata"></audio>
@@ -401,6 +600,7 @@ function updateNP(){
   const t=tracks[current];
   $('np-title').textContent=t?stripExt(t.name):'—';
   $('np-sub').innerHTML=t?`track <em>${current+1}</em> of ${tracks.length}`:'select a track to begin';
+  syncMini();
 }
 
 /* play/pause icon + active-row bars */
@@ -412,6 +612,7 @@ function reflectPlayState(){
   document.querySelectorAll('.track').forEach((el,i)=>{
     el.classList.toggle('playing', i===current && playing);
   });
+  syncMini();
 }
 
 /* ════════════ List render ════════════ */
@@ -477,6 +678,7 @@ function renderPom(){
   el.classList.toggle('brk',pom.phase==='break');
   $('dur-focus').textContent=settings.focus+'m';
   $('dur-brk').textContent=settings.brk+'m';
+  syncMini();
 }
 function pomTick(){
   pom.remaining--;
@@ -550,8 +752,208 @@ function toast(msg){
   clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'),1900);
 }
 
+/* ════════════ Window / views / miniplayer ════════════ */
+const winAPI = window.flowAPI;
+let curView='player', miniOn=false, curMiniH=0;
+const MINI_W=360, MINI_H_BASE=84, MINI_H_POM=58;
+
+function switchView(v){
+  curView=v;
+  document.querySelectorAll('.view').forEach(s=>s.classList.toggle('active',s.dataset.view===v));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.go===v));
+}
+
+function miniHeight(){ return MINI_H_BASE + (pom.running?MINI_H_POM:0); }
+function enterMini(){
+  miniOn=true; document.body.classList.add('mini-mode');
+  syncMini(true); curMiniH=miniHeight();
+  if(winAPI) winAPI.setMini(true,MINI_W,curMiniH);
+}
+function exitMini(){
+  miniOn=false; document.body.classList.remove('mini-mode');
+  if(winAPI) winAPI.setMini(false);
+}
+function syncMini(force){
+  if(!miniOn && !force) return;
+  const t=tracks[current], playing=!audio.paused && current>=0;
+  $('mini-title').textContent=t?stripExt(t.name):'—';
+  $('mini-sub').textContent=t?(playing?'playing':'paused'):'no track';
+  $('mini-play-ico').innerHTML = playing
+    ? '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>'
+    : '<path d="M8 5v14l11-7z"/>';
+  $('mini-pom').style.display = pom.running ? 'flex' : 'none';
+  if(pom.running){
+    const m=Math.floor(pom.remaining/60), s=pom.remaining%60;
+    $('mini-time').textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+    $('mini-phase').textContent=pom.phase==='focus'?'Focus':'Break';
+    $('mini').classList.toggle('brk',pom.phase==='break');
+  }
+  if(miniOn){
+    const h=miniHeight();
+    if(h!==curMiniH){ curMiniH=h; if(winAPI) winAPI.setMini(true,MINI_W,h); }
+  }
+}
+
+/* ════════════ Zen (fullscreen visualizer) ════════════ */
+let zenOn=false, zenRaf=0, analyser=null, zenData=null, zenCtx=null, zenW=0, zenH=0, cursorT=null;
+const zenCache={};
+const ZEN_M=15;                          // spectrum bands feeding the waves
+const zenBands=new Float32Array(ZEN_M);  // temporally smoothed
+let zenGlow=0;                           // smoothed bass energy → orb
+
+function ensureAnalyser(){
+  try{
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state==='suspended') actx.resume();
+    if(!analyser){
+      // can only be created once per <audio> element — afterwards all audio routes through the context
+      const src=actx.createMediaElementSource(audio);
+      analyser=actx.createAnalyser();
+      analyser.fftSize=256;
+      analyser.smoothingTimeConstant=.82;
+      src.connect(analyser);
+      analyser.connect(actx.destination);
+      zenData=new Uint8Array(analyser.frequencyBinCount);
+    }
+  }catch(e){ console.error('analyser failed',e); }
+}
+
+function sizeZen(){
+  const cv=$('zen-canvas'), dpr=window.devicePixelRatio||1;
+  zenW=cv.clientWidth; zenH=cv.clientHeight;
+  cv.width=Math.round(zenW*dpr); cv.height=Math.round(zenH*dpr);
+  zenCtx=cv.getContext('2d');
+  zenCtx.setTransform(dpr,0,0,dpr,0,0);
+}
+
+function enterZen(){
+  if(zenOn) return;
+  if(miniOn) exitMini();
+  ensureAnalyser();
+  zenOn=true;
+  document.body.classList.add('zen-mode');
+  if(winAPI) winAPI.setFullscreen(true);
+  else document.documentElement.requestFullscreen?.().catch(()=>{});
+  requestAnimationFrame(sizeZen);   // real size lands after the resize event; this covers the first frames
+  zenRaf=requestAnimationFrame(zenFrame);
+  wakeCursor();
+}
+function exitZenUI(){
+  if(!zenOn) return;
+  zenOn=false;
+  cancelAnimationFrame(zenRaf);
+  clearTimeout(cursorT);
+  document.body.classList.remove('zen-mode','hide-cursor');
+}
+function exitZen(){
+  exitZenUI();
+  if(winAPI) winAPI.setFullscreen(false);
+  else if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+}
+function wakeCursor(){
+  document.body.classList.remove('hide-cursor');
+  clearTimeout(cursorT);
+  cursorT=setTimeout(()=>{ if(zenOn) document.body.classList.add('hide-cursor'); },2600);
+}
+
+function zSet(id,val,html){
+  if(zenCache[id]===val) return;
+  zenCache[id]=val;
+  if(html) $(id).innerHTML=val; else $(id).textContent=val;
+}
+
+function zenFrame(){
+  if(!zenOn) return;
+  /* ── session + track info ── */
+  const m=Math.floor(pom.remaining/60), s=pom.remaining%60;
+  zSet('zen-time',String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'));
+  zSet('zen-phase',(pom.phase==='focus'?'Focus':'Break')+(pom.running?'':' · paused'));
+  zSet('zen-count',`<em>${pom.sessions}</em> session${pom.sessions===1?'':'s'} today`,true);
+  zSet('zen-pom-btn',pom.running?'pause':(pom.phase==='focus'?'start focus':'start break'));
+  $('zen').classList.toggle('brk',pom.phase==='break');
+  const t=tracks[current], playing=!audio.paused&&current>=0;
+  zSet('zen-track',t?stripExt(t.name):'—');
+  zSet('zen-tt',t?fmt(audio.currentTime)+' / '+fmt(audio.duration||t.duration||0):'no track');
+  const ico=playing?'<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>':'<path d="M8 5v14l11-7z"/>';
+  zSet('zen-play-ico',ico,true);
+  /* ── visualizer: breathing orb + flowing layered waves ── */
+  if(zenCtx){
+    if(analyser) analyser.getByteFrequencyData(zenData);
+    const W=zenW, H=zenH;
+    zenCtx.clearRect(0,0,W,H);
+    const usable=zenData?Math.floor(zenData.length*0.7):0;
+    let bass=0;
+    for(let i=0;i<ZEN_M;i++){
+      let v=0;
+      if(usable){
+        const a=Math.floor(i/ZEN_M*usable), b=Math.max(a+1,Math.floor((i+1)/ZEN_M*usable));
+        for(let j=a;j<b;j++) v+=zenData[j];
+        v/=(b-a)*255;
+      }
+      zenBands[i]+=(v-zenBands[i])*(v>zenBands[i]?0.25:0.06);  // fast attack, slow release
+    }
+    if(usable){ for(let j=0;j<6;j++) bass+=zenData[j]; bass/=6*255; }
+    zenGlow+=(bass-zenGlow)*0.07;
+    const col=pom.phase==='break'?'92,219,125':'167,139,250';
+    const tm=performance.now()/1000;
+
+    // soft orb breathing with the bass, behind the timer
+    const cx=W/2, cy=H*0.44, r=Math.min(W,H)*(0.20+zenGlow*0.26);
+    const g=zenCtx.createRadialGradient(cx,cy,0,cx,cy,r);
+    g.addColorStop(0,`rgba(${col},${(0.10+zenGlow*0.30).toFixed(3)})`);
+    g.addColorStop(1,`rgba(${col},0)`);
+    zenCtx.fillStyle=g;
+    zenCtx.fillRect(cx-r,cy-r,r*2,r*2);
+
+    // three flowing curves along the bottom, mirrored so bass swells in the middle
+    const P=29, c=(P-1)/2, xs=new Array(P), ys=new Array(P);
+    for(let L=0;L<3;L++){
+      const amp=H*(0.34-L*0.09), alpha=[0.28,0.15,0.08][L], drift=tm*(0.5+L*0.35);
+      for(let i=0;i<P;i++){
+        const v=zenBands[Math.min(ZEN_M-1,Math.abs(i-c))];
+        xs[i]=i/(P-1)*W;
+        ys[i]=H-(0.03+v*v)*amp+Math.sin(drift+i*0.55+L*2.1)*H*0.012*(0.4+v*2);
+      }
+      zenCtx.beginPath();
+      zenCtx.moveTo(0,H);
+      zenCtx.lineTo(xs[0],ys[0]);
+      for(let i=1;i<P-1;i++)
+        zenCtx.quadraticCurveTo(xs[i],ys[i],(xs[i]+xs[i+1])/2,(ys[i]+ys[i+1])/2);
+      zenCtx.lineTo(xs[P-1],ys[P-1]);
+      zenCtx.lineTo(W,H);
+      zenCtx.closePath();
+      zenCtx.fillStyle=`rgba(${col},${alpha})`;
+      zenCtx.fill();
+    }
+  }
+  zenRaf=requestAnimationFrame(zenFrame);
+}
+
 /* ════════════ Wire up ════════════ */
 function init(){
+  // window controls + nav + miniplayer
+  if(winAPI){
+    $('win-min').onclick=()=>winAPI.minimize();
+    $('win-close').onclick=()=>winAPI.close();
+  }
+  $('mini-btn').onclick=enterMini;
+  $('mini-expand').onclick=exitMini;
+  $('mini-play').onclick=togglePlay;
+  $('mini-next').onclick=()=>nextTrack(false);
+  $('mini-pom-toggle').onclick=pomStart;
+  document.querySelectorAll('.nav-btn[data-go]').forEach(b=>{ b.onclick=()=>switchView(b.dataset.go); });
+
+  // zen / fullscreen
+  $('nav-zen').onclick=enterZen;
+  $('zen-exit').onclick=exitZen;
+  $('zen-play').onclick=togglePlay;
+  $('zen-prev').onclick=prevTrack;
+  $('zen-next').onclick=()=>nextTrack(false);
+  $('zen-pom-btn').onclick=pomStart;
+  $('zen').addEventListener('mousemove',()=>{ if(zenOn) wakeCursor(); });
+  window.addEventListener('resize',()=>{ if(zenOn) sizeZen(); });
+  if(winAPI && winAPI.onFullscreen) winAPI.onFullscreen(on=>{ if(!on) exitZenUI(); });
+
   loadSettings();
   // volume
   audio.volume=settings.vol/100;
@@ -616,9 +1018,11 @@ function init(){
     };
   });
 
-  // keyboard: space = play/pause
+  // keyboard: space = play/pause · F = zen · Esc = exit zen
   document.addEventListener('keydown',e=>{
     if(e.code==='Space' && e.target.tagName!=='INPUT'){ e.preventDefault(); togglePlay(); }
+    else if(e.key==='Escape' && zenOn) exitZen();
+    else if((e.key==='f'||e.key==='F') && e.target.tagName!=='INPUT'){ zenOn?exitZen():enterZen(); }
   });
 
   reflectLoop(); reflectShuffle();
