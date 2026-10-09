@@ -6,7 +6,8 @@
   "author": "Hugo",
   "scripts": {
     "start": "electron .",
-    "pack": "electron-packager . FLOW --platform=win32 --arch=x64 --icon=build/icon.ico --out=dist --overwrite --prune=true --ignore=\"(^/dist|^/\\.git|^/gui-check\\.js|^/shot-.*\\.png|^/SESSION-LOG\\.md)\"",
+    "test:ui": "electron test/visual.cjs",
+    "pack": "electron-packager . FLOW --platform=win32 --arch=x64 --icon=build/icon.ico --out=dist --overwrite --prune=true --ignore=\"(^/dist|^/test|^/\\.git|^/gui-check\\.js|^/shot-.*\\.png|^/SESSION-LOG\\.md)\"",
     "dist": "electron-builder --win --x64"
   },
   "build": {
@@ -19,6 +20,10 @@
       "index.html",
       "main.js",
       "preload.js",
+      "flow.css",
+      "viz.js",
+      "app.js",
+      "build/icon.ico",
       "fonts/**"
     ],
     "win": {

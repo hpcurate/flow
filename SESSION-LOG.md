@@ -81,6 +81,7 @@ extraction over them.
   `npm run dist`; **or** run the build from an **admin** terminal.
 
 We sidestepped it with `@electron/packager`, which doesn't use `winCodeSign`.
+*Resolved 2026-10-09 without Developer Mode; see the installer entry below.*
 
 ---
 
@@ -180,8 +181,126 @@ All features from the brainstorm, in one pass. GUI-verified via gui-check.js
   (settings.zenViz). Orb stays in all modes.
 - Idle (timer full + not running) shows wall clock + date instead of countdown.
 
+## 2026-10-08 — Dark geometric redesign (v2)
+
+**Asked:** darker colour options, better visualiser settings, better sizing
+(minimal view, full screen view), a better visualiser for the pomodoro, professional,
+abstract/creative with big colours and shapes — "forget the monument valley style".
+
+**Removed:** an uncommitted light "Sanctuary" redesign found in the working tree
+(dated 2026-09-11, never logged here): `sanctuary.css`/`sanctuary.js`, an isometric
+Monument-Valley-style garden over a 1160×820 window. Its useful bits were kept and
+rebuilt in the new code: the intention field, the phase tabs, aria labels, the input-aware
+keyboard guard and the screen-fitting window bounds.
+
+**Structure:** the single inline script is now split up:
+- `index.html`: markup only
+- `flow.css`: the theme
+- `viz.js`: palettes, analysis, canvas styles, cover art (`window.Viz`)
+- `app.js`: the old engine, ported intact, plus the views, settings and render loop
+
+**Look**
+- 7 dark palettes (Bauhaus default, Synth, Ember, Abyss, Acid, Orchid, Graphite) ×
+  3 depths: dark / darker (default) / black (#000). `Viz.theme()` derives every surface
+  token from bg+fg, and `app.js` writes them to `:root`. The window background colour
+  follows the theme (persisted by main, so there's no flash at launch).
+- Type: Syne 800 for display, JetBrains Mono for UI. **Gotcha:** this PC's Segoe UI has
+  been replaced system-wide by a "font wizard" (`segoeui_fontwizard_*.ttf` in the
+  registry), so `font-family: Segoe UI` renders monospace here. The UI font is now the
+  bundled JetBrains Mono, set explicitly. Both bundled fonts are variable;
+  `fonts/fonts.css` now declares each subset once with its weight range.
+- **Clock gotcha:** Syne 800 digits are ~1.07em wide (much wider than 700). Use its
+  `tnum` feature (`font-variant-numeric: tabular-nums`, every digit 1.06em) and size the
+  clock as `.14 × dial`.
+- Seeded Bauhaus cover art per track (SVG, colours as `k1..k5` classes so palettes
+  recolour without regenerating). Shown in the player, library rows, the minimal strip
+  and the mini bar.
+- Film grain overlay (generated noise tile) and Motion: full / calm / still.
+
+**Timer visuals** (stage + minimal + optional full screen), `T` cycles:
+- Orbit: thick progress ring, minute ticks, bass-driven head, satellites.
+- Eclipse: the moon covers the sun during focus and slides off during breaks.
+- Mosaic: one shape per minute, filled as minutes pass.
+- Tide: a vessel that fills during focus and drains during breaks.
+
+On Eclipse and Tide the clock uses `mix-blend-mode: difference` with ink = phase colour,
+so the digits read black on the colour and coloured on the dark. **This only works if
+nothing between the clock and the canvas creates a stacking context.** No z-index,
+transform or container query on `.dial`; that is why the clock size comes from a JS-set
+`--S` rather than container units.
+
+Also new: a cycle strip (● focus · ▪ break · ▬ long break, with live progress), today's
+focused time (`flow_focus_<date>`), a configurable long-break interval, auto-roll on/off,
+and a chime toggle. Per-day keys now use the local date (they used the UTC date).
+
+**Visualiser:** 6 music styles (Bauhaus poster with beat-quantised quarter turns, Orbit,
+Monolith, Strata, Burst, Float). The analyser is now `fftSize` 2048, mapped to 24
+log-spaced bands with attack/release smoothing, onset detection (`A.beat`/`A.pulse`) and
+an idle metronome so it keeps moving in silence.
+- Settings → Visualiser has a live preview, sensitivity / smoothing / speed / density /
+  scale, colour mode (palette / follow timer / mono), what full screen shows (music or
+  timer), clock / track toggles, 30/60 fps, new composition, and reset.
+- With the clock showing, Orbit and Burst open a wider centre, Monolith splits into floor
+  and ceiling bars, and Strata sits lower, so the digits stay clear.
+
+**Views / window** (main.js rewritten around `win-state.json`):
+- Standard is resizable (min 880×640) and maximisable. Minimal is 400×660 (min 340×520)
+  with an optional pin to keep it on top. Mini is the 360×84/142 bar. Full screen
+  restores whatever came before.
+- Each view remembers its own bounds. The first trip to minimal or mini keeps the window's
+  top-right corner. The legacy `win-pos.json` is migrated, and FLOW reopens in the last view.
+- A view change that arrives during a full-screen transition is queued (`pending`) and
+  replayed after the 50 ms restore. Without this, "exit full screen → minimal" was
+  silently dropped.
+- Single-instance lock: launching FLOW again while it sits in the tray brings it forward
+  (it used to start a second copy). The tray menu gained "Start / Pause timer".
+- New icon: the four-shape mark (multi-size PNG ICO, `build/icon.ico`).
+
+**Verification:** `test/visual.cjs` was rewritten (`npm run test:ui`; `gui-check.js` now
+just requires it). It plays a generated 120 bpm loop through the real graph with the
+window muted, and asserts the analyser level, every view's exact bounds, the full-screen
+restore, the replayed view change, that nothing overflows at minimum and large sizes,
+persistence across a reload, and zero renderer errors. It saves 30+ screenshots.
+Passing; all screenshots were reviewed.
+
+## 2026-10-09 — Shareable installer (`FLOW-Setup-1.0.0.exe`)
+
+Goal: a single file Hugo can send so other people can install FLOW.
+
+**Unblocking electron-builder without Developer Mode:** every failed `npm run dist`
+left a numbered folder in `%LOCALAPPDATA%\electron-builder\Cache\winCodeSign\`
+holding the complete extraction *except* the macOS `.dylib` symlinks. Copying one of
+those folders to `winCodeSign-2.6.0` (the name electron-builder 25 looks for) makes it
+use the cache and skip extraction. The Windows tools (rcedit, signtool) are all there.
+If the cache is ever wiped, repeat this: run the build once, let it fail, then copy.
+
+**Build:** `npx electron-builder --win nsis --x64` → `dist\FLOW-Setup-1.0.0.exe`
+(~82 MB, unsigned). `npm run dist` builds the same plus `FLOW-portable.exe`. Config is
+the existing `build` block in `package.json`: per-user install (no admin) into
+`%LOCALAPPDATA%\Programs\flow`, choosable folder, desktop + Start Menu shortcuts,
+uninstall from Settings → Apps. AppUserModelId `com.hugo.flow` matches `main.js`, so
+toast notifications work from the installed copy.
+
+**Verified:** the asar holds every file `index.html` loads (`app.js`, `viz.js`,
+`flow.css`, `fonts/*`, `preload.js`, `build/icon.ico`). There are no other file or
+network references. The installer payload lists the full 74-file app.
+`win-unpacked\FLOW.exe` launched in an isolated `--user-data-dir` profile and stayed up with no renderer errors.
+**Not done:** a real install/uninstall run. The installer closes any running `FLOW.exe`
+by name, so a silent test would have killed Hugo's open copy.
+
+**For recipients:** the exe is unsigned, so Windows SmartScreen shows "Windows protected
+your PC". Click **More info → Run anyway**. Browsers may also warn on download. Avoiding
+that needs a code-signing certificate (paid).
+
+**Note for Hugo:** installing it himself adds a second copy next to
+`dist\FLOW-win32-x64`. Both use the same `%APPDATA%\flow` profile, so the library and
+settings carry over, and the single-instance lock means only one runs at a time.
+
+---
+
 ## Open follow-ups
-- Visual polish unverified by Claude (no GUI access): miniplayer bar height,
-  fixed-window dimensions, nav spacing — quick CSS tweaks once Hugo uses it for real.
-- Single-file installer (`FLOW-Setup.exe`) pending the Developer-Mode/admin step above.
+- The visualiser was tuned on a generated loop. Real tracks may want a different default
+  sensitivity (Settings → Visualiser → Sensitivity).
+- Installer is unsigned (SmartScreen warning for recipients). Signing would need a certificate.
+- Bump `version` in `package.json` before building a new installer to send, so recipients can tell builds apart.
 - Optional: slim down via Tauri (~5 MB) later.

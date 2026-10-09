@@ -1,8 +1,18 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// the view to open in (standard / minimal), read once before the page renders
+const initial = ipcRenderer.sendSync('win:initial') || {};
+
 contextBridge.exposeInMainWorld('flowAPI', {
+  initialMode: initial.mode || 'standard',
+  initialOnTop: !!initial.onTop,
   minimize: () => ipcRenderer.send('win:minimize'),
+  toggleMax: () => ipcRenderer.send('win:max'),
+  onMaxed: (cb) => ipcRenderer.on('win:maxed', (_e, on) => cb(on)),
   close: () => ipcRenderer.send('win:close'),
+  setMode: (mode) => ipcRenderer.send('win:mode', { mode }),
+  setOnTop: (on) => ipcRenderer.send('win:ontop', { on }),
+  setTheme: (bg) => ipcRenderer.send('win:theme', { bg }),
   setMini: (mini, width, height) => ipcRenderer.send('win:mini', { mini, width, height }),
   setFullscreen: (on) => ipcRenderer.send('win:fullscreen', { on }),
   onFullscreen: (cb) => ipcRenderer.on('win:fs', (_e, on) => cb(on)),
