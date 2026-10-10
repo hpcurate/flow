@@ -184,8 +184,11 @@
   </div>
   <div class="zen-bottom">
     <div class="zen-track-wrap">
-      <div class="zen-track" id="zen-track">—</div>
-      <div class="zen-tt" id="zen-tt">no track</div>
+      <div class="zen-art art" id="zen-art"></div>
+      <div class="zen-track-text">
+        <div class="zen-track" id="zen-track">—</div>
+        <div class="zen-tt" id="zen-tt">no track</div>
+      </div>
     </div>
     <div class="zen-ctrls">
       <button class="ctrl" id="zen-prev" title="Previous"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="6" width="2.4" height="12" rx="1"/><path d="M19 6.9v10.2a.9.9 0 0 1-1.4.74l-7.4-5.1a.9.9 0 0 1 0-1.48l7.4-5.1A.9.9 0 0 1 19 6.9z"/></svg></button>
@@ -264,6 +267,10 @@
 
     <section class="dr-pane" data-pane="viz">
       <div class="preview"><canvas id="viz-preview" aria-hidden="true"></canvas><span class="preview-tag" id="preview-tag">Bauhaus</span></div>
+      <div class="field row">
+        <div class="lbl">Other apps <span class="hint">show and visualise what Spotify, a browser or any other player is playing</span><span class="hint sys-status" id="sys-status"></span></div>
+        <button class="switch-btn" data-toggle="sysMedia" aria-label="Show and visualise other apps"></button>
+      </div>
       <div class="field">
         <div class="lbl">Style</div>
         <div class="style-grid" data-set="vizStyle">

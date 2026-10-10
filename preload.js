@@ -18,5 +18,9 @@ contextBridge.exposeInMainWorld('flowAPI', {
   onFullscreen: (cb) => ipcRenderer.on('win:fs', (_e, on) => cb(on)),
   setProgress: (v, mode) => ipcRenderer.send('win:progress', { v, mode }),
   setTray: (text) => ipcRenderer.send('tray:tip', text),
-  onMedia: (cb) => ipcRenderer.on('media', (_e, act) => cb(act))
+  onMedia: (cb) => ipcRenderer.on('media', (_e, act) => cb(act)),
+  // other apps' media (Spotify & co.) through the Windows media sessions
+  sysMedia: (on) => ipcRenderer.send('sys:enable', !!on),
+  sysCmd: (cmd, arg) => ipcRenderer.send('sys:cmd', { cmd, arg }),
+  onSys: (cb) => ipcRenderer.on('sys:msg', (_e, msg) => cb(msg))
 });

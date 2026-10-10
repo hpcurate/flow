@@ -1,6 +1,7 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 // The two resizable views. Mini's size comes from the renderer (it grows while a
 // timer runs); full screen restores whatever was there before.
@@ -199,8 +200,78 @@ function createTray() {
   });
 }
 
+/* ── Other apps' media (Spotify & co.) ──
+   smtc.ps1 reads the Windows media sessions and takes play/pause/skip commands on stdin.
+   It runs in Windows PowerShell 5.1, which can't read files inside app.asar, so a copy is
+   written to userData first. It exits by itself when its stdin closes. */
+const SYS_SCRIPT = path.join(app.getPath('userData'), 'smtc.ps1');
+const sys = { proc: null, want: false, state: null, art: null, fails: 0, timer: null };
+
+function sysSend(msg) { if (win && !win.isDestroyed()) win.webContents.send('sys:msg', msg); }
+function sysStart() {
+  if (sys.proc || !sys.want || process.platform !== 'win32') return;
+  try {
+    const src = fs.readFileSync(path.join(__dirname, 'smtc.ps1'), 'utf8');
+    let old = null; try { old = fs.readFileSync(SYS_SCRIPT, 'utf8'); } catch {}
+    if (old !== src) fs.writeFileSync(SYS_SCRIPT, src);
+  } catch (e) { sysSend({ t: 'err', msg: 'could not prepare the media bridge' }); return; }
+  const ps = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const p = spawn(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', SYS_SCRIPT],
+    { windowsHide: true, env: { ...process.env, FLOW_AUMID: 'com.hugo.flow' } });
+  sys.proc = p;
+  let buf = '';
+  p.stdout.setEncoding('utf8');
+  p.stdout.on('data', d => {
+    buf += d;
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      if (!line) continue;
+      let m; try { m = JSON.parse(line); } catch { continue; }
+      if (m.t === 'state') { sys.state = m; sys.fails = 0; }
+      else if (m.t === 'art') sys.art = m;
+      else if (m.t === 'warn') { console.warn('[smtc]', m.msg); continue; }
+      sysSend(m);
+    }
+  });
+  p.stderr.on('data', d => console.warn('[smtc]', String(d).trim()));
+  p.on('error', () => {});
+  p.on('exit', code => {
+    if (sys.proc === p) sys.proc = null;
+    if (code === 2 || !sys.want) return;   // 2: this Windows has no media sessions API
+    // crashed: try again a few times, slower each time
+    if (++sys.fails > 5) { sysSend({ t: 'err', msg: 'the media bridge keeps stopping' }); return; }
+    clearTimeout(sys.timer);
+    sys.timer = setTimeout(sysStart, 1500 * sys.fails);
+  });
+}
+function sysStop() {
+  clearTimeout(sys.timer);
+  const p = sys.proc; sys.proc = null;
+  if (!p) return;
+  try { p.stdin.end(); } catch {}
+  setTimeout(() => { try { if (p.exitCode === null) p.kill(); } catch {} }, 1500);
+}
+ipcMain.on('sys:enable', (e, on) => {
+  sys.want = !!on;
+  if (!sys.want) { sysStop(); sys.state = sys.art = null; return; }
+  if (sys.proc) { if (sys.state) sysSend(sys.state); if (sys.art) sysSend(sys.art); }   // a reloaded page catches up
+  else { sys.fails = 0; sysStart(); }
+});
+ipcMain.on('sys:cmd', (e, { cmd, arg }) => {
+  if (!sys.proc || !/^(toggle|play|pause|next|prev|seek)$/.test(cmd)) return;
+  const n = Number(arg);
+  try { sys.proc.stdin.write(cmd + (cmd === 'seek' && Number.isFinite(n) ? ' ' + n.toFixed(2) : '') + '\n'); } catch {}
+});
+app.on('will-quit', () => { sys.want = false; sysStop(); });
+
 app.whenReady().then(() => {
   if (!primary) return;
+  // the visualiser's ears for other apps: system audio loopback, no picker. The "video" half
+  // of the request is FLOW's own page (no screen capture), and the renderer stops it at once.
+  session.defaultSession.setDisplayMediaRequestHandler((req, cb) => {
+    if (req.frame) cb({ video: req.frame, audio: 'loopback' }); else cb({});
+  });
   createWindow();
   createTray();
   app.on('activate', () => {

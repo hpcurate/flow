@@ -2,7 +2,7 @@
    view and style with a generated music track, asserts on window bounds,
    layout fit, persistence and renderer errors, and saves shot-*.png to read.
    Run: npm run test:ui   (FLOW_LOG=1 also echoes the renderer console) */
-const {app,BrowserWindow}=require('electron');
+const {app,BrowserWindow,ipcMain}=require('electron');
 const fs=require('fs');
 const os=require('os');
 const path=require('path');
@@ -16,6 +16,11 @@ app.on('web-contents-created',(_,contents)=>{
   contents.on('did-fail-load',(_e,code,description)=>errors.push(`${code}: ${description}`));
 });
 require('../main.js');
+// the media bridge reads the real Windows sessions, but a test must never press play / skip
+// on the user's actual player: commands are recorded here instead of reaching it
+const sysSent=[];
+ipcMain.removeAllListeners('sys:cmd');
+ipcMain.on('sys:cmd',(_e,c)=>sysSent.push(c));
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 
 // a 12 s, 120 bpm loop: swept kick, a breathing pad chord, off-beat hats and a plucked lead
@@ -58,6 +63,8 @@ app.whenReady().then(async()=>{
     const fit=async where=>{ const bad=await run(FIT); assert.equal(bad.length,0,where+': '+bad.join(' | ')); };
     const initial=win.getBounds();
     assert.equal(initial.width,1160); assert.equal(initial.height,820);
+    // other apps stay out of the way until their own section below (whatever is playing on this PC)
+    await run(`setSetting('sysMedia',false);window.Notification=function(){};0`); await pause(300);
     await shot('1-standard-empty'); await fit('standard, empty');
 
     // real audio through the real graph
@@ -126,16 +133,87 @@ app.whenReady().then(async()=>{
     win.setBounds({...initial,width:1600,height:1000}); await pause(600); await shot('10-standard-large'); await fit('standard large');
     win.setBounds(initial); await pause(700);
 
+    // other apps (Spotify & co.), first through the real bridge: it must report something, and if
+    // a player is actually playing, the visualiser must hear it through the system loopback
+    await run(`audio.pause();setSetting('sysMedia',true);0`);
+    let real=null;
+    for(let i=0;i<40&&!(real&&real.seen);i++){ await pause(250); real=await run(`({seen:sysSeen,err:sysErr,src,sys:sys&&{app:sys.app,title:sys.title,playing:sys.playing}})`); }
+    assert(real.seen&&!real.err,'the media bridge should report: '+JSON.stringify(real));
+    let live=null;
+    if(real.sys&&real.sys.playing){
+      await pause(2500);
+      live=await run(`({src,vizLoop,loopErr,level:Viz.A.level,app:sys.app,art:!!document.querySelector('#cover .art-img')})`);
+      assert(live.src==='sys'&&live.vizLoop,'a playing app should drive the visualiser: '+JSON.stringify(live));
+      assert(live.level>.02,'system audio should reach the analyser: '+JSON.stringify(live));
+      await shot('11-sys-live');
+    }
+
+    // then a scripted session: stop the real bridge and feed the page directly
+    ipcMain.emit('sys:enable',{},false); await pause(1200);
+    const ART=`(()=>{const c=document.createElement('canvas');c.width=c.height=300;const x=c.getContext('2d');
+      x.fillStyle='#16233f';x.fillRect(0,0,300,300);x.fillStyle='#ff4f2e';x.beginPath();x.arc(105,115,72,0,7);x.fill();
+      x.fillStyle='#ffc23d';x.fillRect(150,150,118,118);x.fillStyle='#f2ede4';x.fillRect(32,236,96,18);return c.toDataURL();})()`;
+    const SYS=o=>`onSys(Object.assign({t:'state',app:'Spotify.exe',title:'Out Of Your Depth - Skellytn Remix',artist:'Fourward',album:'Out Of Your Depth',
+      status:'Playing',pos:62,dur:208.3,at:Date.now(),prev:true,next:true,seek:true,key:'k1'},${JSON.stringify(o||{})}));0`;
+    await run(SYS()); await run(`onSys({t:'art',key:'k1',url:${ART}});0`); await pause(500);
+    let v=await run(`({src,title:$('np-title').textContent,sub:$('np-sub').textContent,img:!!document.querySelector('#cover .art-img'),
+      loop:$('loop-btn').disabled,pauseIco:$('play-ico').innerHTML.includes('rect'),tray:trayTip})`);
+    assert.equal(v.src,'sys'); assert.equal(v.title,'Out Of Your Depth - Skellytn Remix'); assert.equal(v.sub,'Spotify · Fourward');
+    assert(v.img&&v.loop&&v.pauseIco&&v.tray.includes('♪ Out Of Your Depth'),JSON.stringify(v));
+    await shot('11-sys-standard'); await fit('standard, another app');
+
+    // the transport drives the other app: play/pause, skip, seek
+    sysSent.length=0;
+    await run(`$('play-btn').click();$('next-btn').click();$('seek').value=500;$('seek').dispatchEvent(new Event('change'));0`); await pause(200);
+    assert.deepEqual(sysSent.map(c=>c.cmd),['toggle','next','seek']);
+    assert(Math.abs(sysSent[2].arg-104.15)<.5,'seek to half way: '+sysSent[2].arg);
+    v=await run(`({playing:sys.playing,src,playIco:$('play-ico').innerHTML.includes('path')})`);
+    assert(!v.playing&&v.src==='sys'&&v.playIco,'a paused app keeps the panel: '+JSON.stringify(v));
+
+    // FLOW's own track takes the panel (and the visualiser) while it plays, and keeps it when paused
+    await run(`play(0);0`); await pause(600);
+    v=await run(`({src,title:$('np-title').textContent,vizLoop,loop:$('loop-btn').disabled})`);
+    assert.deepEqual(v,{src:'flow',title:'Night drive',vizLoop:false,loop:false});
+    await run(`audio.pause();0`); await pause(200);
+    assert.equal(await run(`src`),'flow','paused FLOW keeps the panel');
+    await run(SYS()); await pause(300);
+    assert.equal(await run(`src`),'sys','the other app playing again takes it back');
+
+    // the timer's music sync pauses the other app for a break and resumes it after
+    sysSent.length=0;
+    await run(`selectPhase('focus');pomStart();pomSkip();0`); await pause(300);
+    assert.deepEqual(sysSent.map(c=>c.cmd),['pause']);
+    await run(`pomSkip();0`); await pause(300);
+    assert.deepEqual(sysSent.map(c=>c.cmd),['pause','play']);
+
+    // every view shows it
+    await run(`openDrawer('viz');0`); await pause(500); await shot('11-sys-settings');
+    assert((await run(`$('sys-status').textContent`)).startsWith('Now: Spotify · Out Of Your Depth'));
+    await run(`closeDrawer();setMode('minimal');0`); await pause(900); await shot('11-sys-minimal'); await fit('minimal, another app');
+    await run(`enterMini();0`); await pause(700); await shot('11-sys-mini');
+    assert.equal(await run(`$('mini-sub').textContent`),'Spotify · playing');
+    await run(`exitMini();setMode('standard');0`); await pause(900);
+    await run(`enterZen();0`); await pause(1500); await shot('11-sys-fs');
+    v=await run(`({t:$('zen-track').textContent,tt:$('zen-tt').textContent,art:!!document.querySelector('#zen-art .art-img')})`);
+    assert(v.t==='Out Of Your Depth - Skellytn Remix — Fourward'&&v.tt.startsWith('Spotify · 1:')&&v.art,JSON.stringify(v));
+    await run(`exitZen();0`); await pause(1200); assert.deepEqual(win.getBounds(),initial);
+
+    // switched off, FLOW is back to its own library
+    await run(`setSetting('sysMedia',false);0`); await pause(300);
+    v=await run(`({src,sys:!!sys,title:$('np-title').textContent,loop:$('loop-btn').disabled,vizLoop})`);
+    assert.deepEqual(v,{src:'flow',sys:false,title:'Night drive',loop:false,vizLoop:false});
+    await run(`setSetting('sysMedia',true);0`);
+
     // persistence across a reload
     await run(`pomPause();setSetting('theme','orchid');setSetting('timerStyle','mosaic');setSetting('vizStyle','burst');setSetting('vizSens',1.6);0`);
     win.reload(); await new Promise(r=>win.webContents.once('did-finish-load',r)); await pause(900);
-    const kept=await run(`({theme:settings.theme,ts:settings.timerStyle,viz:settings.vizStyle,sens:settings.vizSens,tracks:tracks.length,intention:$('intention').value})`);
-    assert.deepEqual(kept,{theme:'orchid',ts:'mosaic',viz:'burst',sens:1.6,tracks:2,intention:'Draft the chapter outline'});
+    const kept=await run(`({sysMedia:settings.sysMedia,theme:settings.theme,ts:settings.timerStyle,viz:settings.vizStyle,sens:settings.vizSens,tracks:tracks.length,intention:$('intention').value})`);
+    assert.deepEqual(kept,{sysMedia:true,theme:'orchid',ts:'mosaic',viz:'burst',sens:1.6,tracks:2,intention:'Draft the chapter outline'});
     const st=JSON.parse(fs.readFileSync(path.join(profile,'win-state.json'),'utf8'));
     assert.equal(st.mode,'standard'); assert.equal(st.bounds.minimal.width,400);
 
     assert.equal(errors.length,0,errors.join('\n'));
-    console.log(JSON.stringify({result:'PASS',audio:audioState,initial,profile},null,2));
+    console.log(JSON.stringify({result:'PASS',audio:audioState,otherApps:{bridge:real.sys,live},initial,profile},null,2));
     app.exit(0);
   }catch(error){ console.error(error); console.error('renderer errors:',errors); app.exit(1); }
 });

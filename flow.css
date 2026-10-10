@@ -33,6 +33,8 @@ svg .r0{fill:none;stroke:var(--bd2)} svg .r1{fill:none;stroke:var(--c1)} svg .r2
 svg .r3{fill:none;stroke:var(--c3)} svg .r4{fill:none;stroke:var(--c4)} svg .r5{fill:none;stroke:var(--c5)}
 .art{position:relative;overflow:hidden;background:var(--s2)}
 .art svg{width:100%;height:100%}
+/* another app's artwork, laid over the generated art */
+.art .art-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 .art .sp{transform-box:fill-box;transform-origin:center;animation:spin 26s linear infinite;animation-play-state:paused}
 body.is-playing .art .sp{animation-play-state:running}
 body[data-motion=still] .art .sp{animation:none}
@@ -175,15 +177,19 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.2)}
 .card{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-card);padding:16px;position:relative}
 
 .np{flex:1;min-height:0;display:flex;flex-direction:column;gap:14px}
-.cover{flex:1;min-height:92px;border-radius:14px}
+.cover{flex:1;min-height:92px;border-radius:14px;container-type:size}
+/* the big cover keeps a sleeve square, centred on its poster, rather than cropping it */
+.cover .art-img{--side:min(100cqw - 36px,100cqh - 36px);width:var(--side);height:var(--side);margin:auto;border-radius:8px}
 .np-meta{min-width:0}
 .np-title{font:800 19px/1.2 var(--display);letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.np-sub{font:500 11px/1 var(--mono);color:var(--mu);margin-top:7px;letter-spacing:.04em}
+.np-sub{font:500 11px/1.3 var(--mono);color:var(--mu);margin-top:5px;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .np-sub em{color:var(--fg2);font-style:normal}
 .seek-wrap{display:flex;align-items:center;gap:10px}
 .time{font:500 10px/1 var(--mono);color:var(--mu);min-width:34px;font-variant-numeric:tabular-nums}
 #t-cur{text-align:right;color:var(--fg2)}
 .seek{--fill:var(--phase)}
+.seek:disabled{opacity:.4}
+body[data-src=sys] .vol-row{opacity:.45}
 .controls{display:flex;align-items:center;justify-content:space-between;padding:0 4px}
 .ctrl{position:relative;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:var(--mu);transition:color .15s,background .15s}
 .ctrl:hover{color:var(--fg)}
@@ -265,7 +271,7 @@ body.mode-minimal .stage-player{display:grid;position:relative;z-index:2;grid-te
   margin:0 10px 10px;padding:8px 8px 8px 8px;border-radius:16px;background:var(--s1);border:1px solid var(--bd)}
 .sp-art{width:40px;height:40px;border-radius:10px;margin-right:4px}
 .sp-title{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sp-sub{font:500 10px/1 var(--mono);color:var(--mu);margin-top:4px}
+.sp-sub{font:500 10px/1.3 var(--mono);color:var(--mu);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .icon-btn{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:var(--fg2);transition:color .15s,background .15s}
 .icon-btn:hover{color:var(--fg);background:var(--s2)}
 .icon-btn svg{width:17px;height:17px}
@@ -280,7 +286,7 @@ body.mini-mode .mini{display:flex;flex-direction:column;height:100vh;-webkit-app
 .mini-art{width:56px;height:56px;border-radius:12px;flex-shrink:0}
 .mini-info{flex:1;min-width:0;margin-left:2px}
 .mini-title{font:800 14px/1.2 var(--display);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mini-sub{font:500 10px/1 var(--mono);color:var(--mu);margin-top:5px;letter-spacing:.04em}
+.mini-sub{font:500 10px/1.3 var(--mono);color:var(--mu);margin-top:3px;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mini-ctrl{-webkit-app-region:no-drag;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:var(--mu);flex-shrink:0;transition:color .15s,background .15s}
 .mini-ctrl:hover{color:var(--fg);background:var(--s2)}
 .mini-ctrl svg{width:17px;height:17px}
@@ -319,8 +325,10 @@ body.zen-mode.hide-cursor{cursor:none}
 .zen .cy-l{width:24px;height:9px}
 body.zen-mode .preview{display:none}
 .zen-bottom{position:absolute;left:0;right:0;bottom:0;z-index:3;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:0 26px 30px}
-.zen-track-wrap{min-width:0;padding:10px 16px;border-radius:16px;background:color-mix(in srgb,var(--bg) 72%,transparent);backdrop-filter:blur(8px)}
+.zen-track-wrap{min-width:0;display:flex;align-items:center;gap:12px;padding:10px 16px 10px 10px;border-radius:16px;background:color-mix(in srgb,var(--bg) 72%,transparent);backdrop-filter:blur(8px)}
 .zen-track{font:800 18px/1.25 var(--display);max-width:44vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.zen-art{width:44px;height:44px;border-radius:10px;flex-shrink:0}
+.zen-track-text{min-width:0}
 .zen-tt{font:500 11px/1 var(--mono);color:var(--fg2);margin-top:7px;font-variant-numeric:tabular-nums}
 .zen-ctrls{display:flex;align-items:center;gap:6px;padding:6px;border-radius:999px;background:color-mix(in srgb,var(--bg) 72%,transparent);backdrop-filter:blur(8px)}
 .zen-ctrls .ctrl{color:var(--fg2)}
@@ -352,6 +360,7 @@ body.zen-mode .scrim{background:transparent}
 .field.row{flex-direction:row;align-items:center;justify-content:space-between;gap:16px}
 .lbl{font-size:13px;font-weight:600;color:var(--fg)}
 .lbl .hint{display:block;margin-top:3px}
+.lbl .sys-status{color:var(--fg2);font-family:var(--mono);font-size:11px;margin-top:8px}
 .hint{font-size:12px;font-weight:400;color:var(--mu);line-height:1.4}
 .opts{display:flex;flex-wrap:wrap;gap:6px}
 .opts button{height:34px;padding:0 15px;border-radius:999px;border:1px solid var(--bd2);color:var(--fg2);font-size:12px;font-weight:600;transition:all .2s}

@@ -296,6 +296,83 @@ that needs a code-signing certificate (paid).
 `dist\FLOW-win32-x64`. Both use the same `%APPDATA%\flow` profile, so the library and
 settings carry over, and the single-instance lock means only one runs at a time.
 
+## 2026-10-09 — Other apps: system "now playing" + visualiser (Spotify & co.)
+
+**Asked:** show what Spotify is playing inside FLOW, with the visualiser working on it.
+Explicitly **not** through the Spotify API.
+
+**Approach:** two Windows mechanisms, no accounts or keys:
+1. **Track info + control: the Windows media sessions** (SMTC, what the volume flyout
+   shows). `smtc.ps1` is a small bridge run by `main.js` in **Windows PowerShell 5.1**
+   (`powershell.exe`, not pwsh 7: only 5.1 has the WinRT projection). It polls every
+   ~600 ms, prints a JSON line when the shown session changes (`state`), sends artwork
+   as a data URL (`art`), and takes `toggle|play|pause|next|prev|seek <s>` on stdin. It
+   exits when stdin closes, so it never outlives FLOW. FLOW's own session
+   (`com.hugo.flow`, passed as `FLOW_AUMID`) is filtered out.
+2. **Visualiser: system audio loopback.** `session.setDisplayMediaRequestHandler` answers
+   `getDisplayMedia` with `{video: request.frame, audio: 'loopback'}`. The "video" is
+   FLOW's own page (tab capture, so no screen capture and no yellow border), and the
+   renderer stops it at once. No user gesture is needed. The loopback feeds the analyser
+   only, never the speakers.
+
+**Which player the panel shows** (`src` in `app.js`): FLOW's own track while it plays;
+otherwise the other app while it plays; when both are quiet, whichever played last
+(`lastSrc`). The transport (`togglePlay`/`goPrev`/`goNext`, Space, tray) follows `src`.
+Media keys stay on FLOW's own player (`flowToggle`), because Windows only sends them to
+FLOW when FLOW is the current session. While another app is showing: loop/shuffle are
+disabled, prev/next/seek follow what the app allows, and the volume slider is dimmed
+(it is FLOW's own volume). Commands update the state optimistically; the bridge
+re-reports after every command, so a refused command gets corrected.
+
+**Audio graph change:** both `<audio>` sources and the ambience now go into a `bus` gain
+→ destination, and `bus → analyser`. The analyser is a leaf now (Chromium still pulls
+it). `routeViz()` swaps the analyser's input between the bus and the loopback.
+
+**Timer sync:** a break pauses the other app (it can't be faded) and focus resumes it
+(`sysBreak`). The break track, if set, still plays during the break and is faded out
+after.
+
+**UI:** artwork in the cover (the sleeve sits square on the generated poster; it is
+never cropped. Done with `container-type:size` on `.cover`, which is fine because the
+clock blend trick only cares about `.stage`), the minimal strip, the mini bar, and a new
+art chip in full screen. Sub-lines now ellipsis-truncate. There is a switch and a live
+status line in Settings → Visualiser → **Other apps** (setting `sysMedia`, default on).
+
+**Gotchas (each cost a round-trip):**
+- WinRT in PS 5.1: the awaited artwork stream comes back as a bare `__ComObject`
+  (no `Size`, no `ContentType`, no `Dispose`, and `AsStreamForRead` overloads don't bind).
+  Invoking `AsStreamForRead` **through reflection** casts it. The content type is
+  sniffed from the magic bytes. Spotify sends a ~150 KB PNG.
+- PS 5.1 reads a BOM-less script as ANSI, so `smtc.ps1` is kept pure ASCII.
+- PowerShell can't read inside `app.asar`, so `main.js` copies `smtc.ps1` to `userData`
+  and runs it from there with `-File` (chosen over `-EncodedCommand`, which AV tools flag).
+- The bridge reads stdin through its own `StreamReader` over `OpenStandardInput()`
+  rather than `[Console]::In` (a SyncTextReader whose "async" read may just block; not
+  tested, avoided). Verified: commands arrive between polls, and closing stdin exits it.
+- Spotify updates its timeline only every ~4.5 s, so the renderer interpolates from
+  `LastUpdatedTime` (`sysPos()`).
+
+**Test:** `test/visual.cjs` **replaces main's `sys:cmd` handler with a recorder**, so a
+test can never pause or skip the real player. It turns other apps off for the old
+sections, then checks: the real bridge reports; if something is really playing, the
+loopback reaches the analyser (Spotify measured `level ≈ .3`, `shot-11-sys-live`); then
+a scripted Spotify session drives the panel, the transport commands, FLOW taking the
+panel back, the break pause/resume, and every view (`shot-11-sys-*`); switching it off;
+and `sysMedia` persisting across a reload. Passing.
+
+**Flake seen (unresolved):** in the first 2 runs after this change, the existing "mini is
+always on top" assertion failed. `setAlwaysOnTop(true,'floating')` fired
+`always-on-top-changed false` straight away. The next 4 runs passed, including one with
+the loopback forced on at launch, and a minimal Electron spike shows capture doesn't
+affect topmost. Unproven theory: on Windows, Electron puts `'floating'` windows *behind
+the taskbar*, and if the taskbar is momentarily not topmost (e.g. something full-screen
+on screen), the window loses topmost. If the mini bar is ever seen not staying on top,
+try the `'pop-up-menu'` level, which goes above the taskbar.
+
+**Packaged:** `npm run pack`. The asar has the bridge and renderer code. Smoke test:
+`FLOW.exe --user-data-dir=<tmp>` copied `smtc.ps1`, ran exactly one bridge, and left no
+process behind after FLOW was killed.
+
 ---
 
 ## Open follow-ups
@@ -304,3 +381,7 @@ settings carry over, and the single-instance lock means only one runs at a time.
 - Installer is unsigned (SmartScreen warning for recipients). Signing would need a certificate.
 - Bump `version` in `package.json` before building a new installer to send, so recipients can tell builds apart.
 - Optional: slim down via Tauri (~5 MB) later.
+- Other apps: volume can't be controlled (SMTC has no volume); per-app volume would need
+  Core Audio interop in the bridge. Shuffle/repeat are not mapped, though SMTC exposes them.
+- Loopback hears *everything* on the default output device (notifications, other tabs),
+  not only the app shown. Chromium has no per-process loopback here.

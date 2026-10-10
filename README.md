@@ -42,6 +42,18 @@ Six styles (`V` cycles them): **Bauhaus**, **Orbit**, **Monolith**, **Strata**, 
 - 30 / 60 fps
 - **New composition** to reshuffle the shapes
 
+## Other apps (Spotify & co.)
+
+FLOW also shows what other apps are playing, such as Spotify, a browser tab or Media Player. It reads the same Windows media info the volume flyout uses, so it needs no Spotify account, API or login.
+
+- **Player panel, minimal strip, mini bar and full screen** show the other app's title, artist and artwork, plus its position.
+- **Play/pause, previous, next and seek** control that app (`Space` too). Loop and shuffle stay FLOW-only.
+- **The visualiser and the timer visuals** react to it: FLOW listens to the system audio output (loopback). Nothing is recorded or sent anywhere.
+- **Sync music** pauses the other app for a break and resumes it after.
+- When FLOW's own track plays, it takes the panel back. A paused source keeps the panel until the other one starts playing.
+
+Switch it off in Settings → Visualiser → **Other apps**; the status line there shows what FLOW currently sees.
+
 ## Shortcuts
 
 `Space` play/pause · `P` start/pause timer · `F` full screen · `M` minimal ↔ standard · `B` mini player · `V` visualiser style · `T` timer visual · `,` settings · `Esc` close settings / leave full screen
@@ -71,6 +83,7 @@ Send that one file. It installs per user (no admin) with desktop and Start Menu 
 | `flow.css` | the theme; colour tokens are written by `app.js` |
 | `viz.js` | palettes, audio analysis, every canvas style and the cover-art generator (`window.Viz`) |
 | `app.js` | library (IndexedDB), playback, pomodoro, ambience, views, settings, render loop |
-| `main.js` / `preload.js` | Electron window: per-view bounds, mini/full-screen transitions, tray, taskbar progress |
+| `main.js` / `preload.js` | Electron window: per-view bounds, mini/full-screen transitions, tray, taskbar progress, the media bridge and the system-audio grant |
+| `smtc.ps1` | the media bridge: reads the Windows media sessions and relays play/pause/skip (Windows PowerShell 5.1) |
 
-The GUI check runs in a throwaway profile with generated music, so it never touches your library.
+The GUI check runs in a throwaway profile with generated music, so it never touches your library. It does read the real media sessions on this PC, but it intercepts every command, so it never pauses or skips your player.
