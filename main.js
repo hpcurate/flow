@@ -1,7 +1,8 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen, session } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const mark = require('./mark');
 
 // The two resizable views. Mini's size comes from the renderer (it grows while a
 // timer runs); full screen restores whatever was there before.
@@ -17,7 +18,8 @@ let saveT = null;
 let inMini = false;
 let fsRestore = null;   // bounds to return to after full screen (also marks the transition)
 let pending = null;     // a view change that arrived mid-transition, replayed after it
-let state = { mode: 'standard', bounds: {}, onTop: false, maximized: false, bg: '#060607' };
+let state = { mode: 'standard', bounds: {}, onTop: false, maximized: false, bg: '#060607', mark: null };
+const isHex = c => /^#[0-9a-f]{6}$/i.test(c);
 
 // needed for Windows toast notifications from the renderer
 app.setAppUserModelId('com.hugo.flow');
@@ -41,6 +43,8 @@ function loadState() {
   }
   if (!MODES[state.mode]) state.mode = 'standard';
   if (!state.bounds || typeof state.bounds !== 'object') state.bounds = {};
+  if (!isHex(state.bg)) state.bg = '#060607';
+  if (!Array.isArray(state.mark) || state.mark.length !== 4 || !state.mark.every(isHex)) state.mark = null;
 }
 function saveState() {
   try { fs.writeFileSync(STATE_FILE, JSON.stringify(state)); } catch {}
@@ -137,6 +141,7 @@ function createWindow() {
     minWidth,
     minHeight,
     backgroundColor: state.bg || '#060607',
+    icon: iconFile(),
     title: 'FLOW',
     frame: false,
     resizable: true,
@@ -182,8 +187,71 @@ function createWindow() {
   });
 }
 
+/* ── The icon wears the theme ──
+   The taskbar button, the tray and FLOW's own shortcuts are redrawn in the current
+   palette (the titlebar mark's four shapes on the theme's background). Each colouring
+   is written once to userData/icons under a name made of its colours: a new theme
+   is a new path, which is what makes Explorer's icon cache let go of the old one. */
+const ICON_DIR = path.join(app.getPath('userData'), 'icons');
+const BUILD_ICON = path.join(__dirname, 'build', 'icon.ico');
+let shownIcon = null;
+let lnkT = null;
+
+function iconFile() {
+  if (!state.mark) return BUILD_ICON;
+  const file = path.join(ICON_DIR, 'flow-' + [state.bg, ...state.mark].map(c => c.slice(1).toLowerCase()).join('-') + '.ico');
+  try {
+    if (!fs.existsSync(file)) {
+      fs.mkdirSync(ICON_DIR, { recursive: true });
+      fs.writeFileSync(file, mark.ico(state.bg, state.mark));
+    }
+    return file;
+  } catch { return BUILD_ICON; }
+}
+function applyIcon() {
+  const file = iconFile();
+  if (file === shownIcon) return;
+  shownIcon = file;
+  if (win && !win.isDestroyed()) win.setIcon(file);
+  if (tray) tray.setImage(file);
+  queueShortcuts();
+}
+
+// Start menu, desktop and taskbar-pin shortcuts whose target is this exe point at the
+// current icon. Packaged app on its own profile only: a dev, test or --user-data-dir
+// smoke run must never point the user's shortcuts at its throwaway icons.
+function shortcutDirs() {
+  const ad = app.getPath('appData');
+  return [path.join(ad, 'Microsoft', 'Windows', 'Start Menu', 'Programs'), app.getPath('desktop'),
+    path.join(ad, 'Microsoft', 'Internet Explorer', 'Quick Launch', 'User Pinned', 'TaskBar')];
+}
+function restyleShortcuts(icon, dirs, exe) {
+  const want = path.resolve(exe).toLowerCase();
+  let n = 0;
+  const walk = (dir, depth) => {
+    let list; try { list = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const d of list) {
+      const p = path.join(dir, d.name);
+      if (d.isDirectory()) { if (depth) walk(p, depth - 1); continue; }
+      if (!/\.lnk$/i.test(d.name)) continue;
+      try {
+        const l = shell.readShortcutLink(p);
+        if (!l.target || path.resolve(l.target).toLowerCase() !== want || l.icon === icon) continue;
+        if (shell.writeShortcutLink(p, 'update', { icon, iconIndex: 0 })) n++;
+      } catch {}
+    }
+  };
+  for (const dir of dirs) walk(dir, 1);
+  return n;
+}
+function queueShortcuts() {
+  if (!app.isPackaged || process.platform !== 'win32' || !state.mark || app.commandLine.hasSwitch('user-data-dir')) return;
+  clearTimeout(lnkT);   // clicking through the palettes rewrites them once, at the end
+  lnkT = setTimeout(() => restyleShortcuts(shownIcon, shortcutDirs(), process.execPath), 2000);
+}
+
 function createTray() {
-  tray = new Tray(path.join(__dirname, 'build', 'icon.ico'));
+  tray = new Tray(iconFile());
   tray.setToolTip('FLOW');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show FLOW', click: () => { win.show(); win.focus(); } },
@@ -274,6 +342,8 @@ app.whenReady().then(() => {
   });
   createWindow();
   createTray();
+  shownIcon = iconFile();
+  queueShortcuts();   // catches a shortcut or pin made since the theme last changed
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -299,10 +369,13 @@ ipcMain.on('win:ontop', (e, { on }) => {
   state.onTop = !!on; saveState();
   if (!busy() && !inMini) win.setAlwaysOnTop(state.mode === 'minimal' && state.onTop, 'floating');
 });
-ipcMain.on('win:theme', (e, { bg }) => {
-  if (!/^#[0-9a-f]{6}$/i.test(bg) || bg === state.bg) return;
-  state.bg = bg; saveState();
+ipcMain.on('win:theme', (e, { bg, mark: k }) => {
+  if (!isHex(bg)) return;
+  const m = Array.isArray(k) && k.length === 4 && k.every(isHex) ? k : state.mark;
+  if (bg === state.bg && String(m) === String(state.mark)) return;
+  state.bg = bg; state.mark = m; saveState();
   if (win) win.setBackgroundColor(bg);
+  applyIcon();
 });
 
 ipcMain.on('win:progress', (e, { v, mode }) => {
@@ -328,3 +401,5 @@ ipcMain.on('win:fullscreen', (e, { on }) => {
     win.setFullScreen(false); // 'leave-full-screen' handler restores and re-locks the window
   }
 });
+
+module.exports = { restyleShortcuts };   // for test/visual.cjs

@@ -373,6 +373,42 @@ try the `'pop-up-menu'` level, which goes above the taskbar.
 `FLOW.exe --user-data-dir=<tmp>` copied `smtc.ps1`, ran exactly one bridge, and left no
 process behind after FLOW was killed.
 
+## 2026-10-18 — The icon wears the theme
+
+Asked for: *"make it so that the icon of flow changes to match the currently selected
+theme/colour palette."* The four-shape mark is now redrawn in the current palette
+(the titlebar mark's `--c1 --c2 --c3 --c5` on the theme's background, so depth counts
+too) everywhere Windows shows it:
+
+- **Taskbar button / Alt-Tab** — `win.setIcon`, and the window is created with the last
+  theme's icon, so there is no flash of the default one on launch.
+- **Tray** — `tray.setImage`.
+- **Start menu, desktop and taskbar-pin shortcuts** whose target is this `FLOW.exe` —
+  re-pointed with `shell.writeShortcutLink(…,'update',{icon})` 2 s after the last theme
+  change (so clicking through palettes writes once), and once at launch to catch a new
+  shortcut or pin. Packaged app on its own profile only: `npm start`, the GUI test and
+  `--user-data-dir` smoke runs never touch them. Explorer caches shortcut icons, so the
+  Start menu / a pin may take a moment (or a sign-out) to repaint.
+- **Page favicon** (the web copy) — an SVG data URL from the same colours.
+
+How: `mark.js` (new) rasterises the mark into a multi-size PNG ICO with no image library,
+like GRIND's icon script. The renderer sends `{bg, mark}` on `win:theme`; main keeps it in
+`win-state.json` and writes each colouring once to `userData/icons/flow-<bg>-<c1>-….ico`.
+The name *is* the colours: a new theme is a new path (what Explorer's icon cache needs to
+let go) and a cached file can never be stale. `npm run icon` redraws `build/icon.ico` (the
+exe's own icon) from `viz.js`'s Bauhaus/darker, so the default runtime icon and the exe
+icon are the same image. The mark was also centred: the first icon sat 1 unit low-right
+in its tile.
+
+**Verified:** `npm run test:ui` passes, now asserting for each palette × depth that the
+theme reached main and the 32px icon shows the right colour at each shape's centre, and
+that `restyleShortcuts` rewrites only shortcuts to this exe (fake exe + temp `.lnk`s).
+A separate run read the live window's `WM_GETICON` big and small icons through Win32
+after switching bauhaus → synth → acid: `#ff4f2e` → `#ff3d8b` → `#c5f82a`. Packaged smoke
+run (`--user-data-dir=<tmp>`): boots, writes the icon, real `flow.lnk` untouched.
+**Not yet seen:** the real Start-menu shortcut changing. It happens the first time
+Hugo opens the packaged FLOW.
+
 ---
 
 ## Open follow-ups

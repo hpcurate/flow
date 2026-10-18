@@ -12,7 +12,8 @@ contextBridge.exposeInMainWorld('flowAPI', {
   close: () => ipcRenderer.send('win:close'),
   setMode: (mode) => ipcRenderer.send('win:mode', { mode }),
   setOnTop: (on) => ipcRenderer.send('win:ontop', { on }),
-  setTheme: (bg) => ipcRenderer.send('win:theme', { bg }),
+  // mark: the titlebar mark's four colours, which the taskbar/tray icon is redrawn in
+  setTheme: (bg, mark) => ipcRenderer.send('win:theme', { bg, mark }),
   setMini: (mini, width, height) => ipcRenderer.send('win:mini', { mini, width, height }),
   setFullscreen: (on) => ipcRenderer.send('win:fullscreen', { on }),
   onFullscreen: (cb) => ipcRenderer.on('win:fs', (_e, on) => cb(on)),

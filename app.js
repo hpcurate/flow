@@ -101,7 +101,13 @@ function applyTheme(){
   document.querySelector('meta[name=theme-color]').content=TH.bg;
   document.body.classList.toggle('grain',!!settings.grain);
   document.body.dataset.motion=settings.motion;
-  if(winAPI&&winAPI.setTheme) winAPI.setTheme(TH.bg);
+  // the icon wears the theme: the titlebar mark's shapes (k1 k2 k3 k5) on the background
+  const k=[TH.c[0],TH.c[1],TH.c[2],TH.c[4]];
+  if(winAPI&&winAPI.setTheme) winAPI.setTheme(TH.bg,k);
+  document.querySelector('link[rel=icon]').href='data:image/svg+xml,'+encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="${TH.bg}"/>`+
+    `<circle cx="9.75" cy="9.75" r="5.75" fill="${k[0]}"/><path d="M16.5 15.5V4a11.5 11.5 0 0 1 11.5 11.5z" fill="${k[1]}"/>`+
+    `<rect x="4" y="16.5" width="11.5" height="11.5" rx="1.5" fill="${k[2]}"/><path d="M16.5 16.5H28a5.75 5.75 0 0 1-11.5 0z" fill="${k[3]}"/></svg>`);
 }
 /* a tiny noise tile for the film-grain overlay */
 function makeGrain(){

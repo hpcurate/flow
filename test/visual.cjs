@@ -2,7 +2,7 @@
    view and style with a generated music track, asserts on window bounds,
    layout fit, persistence and renderer errors, and saves shot-*.png to read.
    Run: npm run test:ui   (FLOW_LOG=1 also echoes the renderer console) */
-const {app,BrowserWindow,ipcMain}=require('electron');
+const {app,BrowserWindow,ipcMain,shell}=require('electron');
 const fs=require('fs');
 const os=require('os');
 const path=require('path');
@@ -15,7 +15,7 @@ app.on('web-contents-created',(_,contents)=>{
   contents.on('console-message',(_e,level,message)=>{ if(level>=3) errors.push(message); if(process.env.FLOW_LOG) console.log('[renderer]',message); });
   contents.on('did-fail-load',(_e,code,description)=>errors.push(`${code}: ${description}`));
 });
-require('../main.js');
+const {restyleShortcuts}=require('../main.js');
 // the media bridge reads the real Windows sessions, but a test must never press play / skip
 // on the user's actual player: commands are recorded here instead of reaching it
 const sysSent=[];
@@ -61,6 +61,21 @@ app.whenReady().then(async()=>{
     const run=code=>win.webContents.executeJavaScript(code,true);
     const shot=async name=>fs.writeFileSync(path.join(__dirname,`../shot-${name}.png`),(await win.webContents.capturePage()).toPNG());
     const fit=async where=>{ const bad=await run(FIT); assert.equal(bad.length,0,where+': '+bad.join(' | ')); };
+    // the taskbar/tray icon is redrawn in the theme: its 32px image must show the titlebar
+    // mark's colours at each shape's centre, on the theme's background
+    const iconMatches=async where=>{
+      const th=await run(`({bg:TH.bg,k:[TH.c[0],TH.c[1],TH.c[2],TH.c[4]]})`);
+      const st=JSON.parse(fs.readFileSync(path.join(profile,'win-state.json'),'utf8'));
+      assert.deepEqual({bg:st.bg,k:st.mark},th,where+': theme reached main');
+      const ico=fs.readFileSync(path.join(profile,'icons','flow-'+[th.bg,...th.k].map(c=>c.slice(1).toLowerCase()).join('-')+'.ico'));
+      let png=null;
+      for(let i=0;i<ico.readUInt16LE(4);i++) if(ico[6+16*i]===32) png=ico.subarray(ico.readUInt32LE(6+16*i+12),ico.readUInt32LE(6+16*i+12)+ico.readUInt32LE(6+16*i+8));
+      let o=8; const idat=[];
+      while(o<png.length){ const len=png.readUInt32BE(o); if(png.toString('ascii',o+4,o+8)==='IDAT') idat.push(png.subarray(o+8,o+8+len)); o+=12+len; }
+      const raw=require('zlib').inflateSync(Buffer.concat(idat));   // mark.js writes filter-0 rows
+      const at=(x,y)=>'#'+[0,1,2].map(c=>raw[y*129+1+x*4+c].toString(16).padStart(2,'0')).join('');
+      assert.deepEqual([at(9,9),at(23,9),at(9,22),at(22,19),at(16,30)],[...th.k,th.bg].map(c=>c.toLowerCase()),where+': icon colours');
+    };
     const initial=win.getBounds();
     assert.equal(initial.width,1160); assert.equal(initial.height,820);
     // other apps stay out of the way until their own section below (whatever is playing on this PC)
@@ -84,8 +99,20 @@ app.whenReady().then(async()=>{
     // palettes × darkness
     for(const [t,d,ts] of [['synth','darker','eclipse'],['ember','black','mosaic'],['graphite','dark','orbit'],['abyss','black','tide'],['acid','darker','orbit'],['orchid','dark','eclipse']]){
       await run(`setSetting('theme','${t}');setSetting('depth','${d}');setSetting('timerStyle','${ts}');0`); await pause(500); await shot(`4-theme-${t}-${d}`);
+      await iconMatches(`${t}/${d}`);
     }
     await run(`setSetting('theme','bauhaus');setSetting('depth','darker');setSetting('timerStyle','orbit');0`);
+    await pause(300); await iconMatches('bauhaus/darker');
+
+    // shortcuts: only the ones that open this exe are pointed at the new icon (a fake exe and
+    // a temp folder here — the real Start menu is never touched by a dev or test run)
+    const lnkDir=path.join(profile,'lnk'),exe=path.join(profile,'FLOW.exe'),other=path.join(profile,'other.exe'),icon=path.join(profile,'x.ico');
+    fs.mkdirSync(path.join(lnkDir,'sub'),{recursive:true}); fs.writeFileSync(exe,''); fs.writeFileSync(other,'');
+    for(const [f,target] of [['flow.lnk',exe],['sub/FLOW.lnk',exe],['other.lnk',other]]) assert(shell.writeShortcutLink(path.join(lnkDir,f),{target}),f);
+    assert.equal(restyleShortcuts(icon,[lnkDir],exe),2,'both FLOW shortcuts restyled');
+    assert.equal(shell.readShortcutLink(path.join(lnkDir,'sub/FLOW.lnk')).icon,icon);
+    assert.notEqual(shell.readShortcutLink(path.join(lnkDir,'other.lnk')).icon,icon,'another app\'s shortcut left alone');
+    assert.equal(restyleShortcuts(icon,[lnkDir],exe),0,'nothing rewritten when already current');
 
     await run(`setSide('library');0`); await pause(300); await shot('5-library'); await fit('library');
     await run(`setSide('player');0`);
