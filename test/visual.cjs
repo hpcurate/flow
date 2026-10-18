@@ -15,6 +15,8 @@ app.on('web-contents-created',(_,contents)=>{
   contents.on('console-message',(_e,level,message)=>{ if(level>=3) errors.push(message); if(process.env.FLOW_LOG) console.log('[renderer]',message); });
   contents.on('did-fail-load',(_e,code,description)=>errors.push(`${code}: ${description}`));
 });
+// the TUTOR link listens on a private pipe, so a running FLOW or TUTOR is never touched
+process.env.FLOW_LINK_PIPE='\\\\.\\pipe\\flow-test-'+process.pid;
 const {restyleShortcuts}=require('../main.js');
 // the media bridge reads the real Windows sessions, but a test must never press play / skip
 // on the user's actual player: commands are recorded here instead of reaching it
@@ -230,6 +232,46 @@ app.whenReady().then(async()=>{
     v=await run(`({src,sys:!!sys,title:$('np-title').textContent,loop:$('loop-btn').disabled,vizLoop})`);
     assert.deepEqual(v,{src:'flow',sys:false,title:'Night drive',loop:false,vizLoop:false});
     await run(`setSetting('sysMedia',true);0`);
+
+    // the TUTOR link: a stand-in TUTOR on the pipe runs the clock, FLOW mirrors it, follows its
+    // breaks with the music and sends its own timer buttons back; unlinking restores FLOW's timer
+    const net=require('net');
+    const linkTo=async()=>{
+      const s=net.connect(process.env.FLOW_LINK_PIPE), got=[]; let buf='';
+      await new Promise((r,j)=>{ s.once('connect',r); s.once('error',j); });
+      s.setEncoding('utf8');
+      s.on('data',d=>{ buf+=d; let i; while((i=buf.indexOf('\n'))>=0){ const l=buf.slice(0,i).trim(); buf=buf.slice(i+1); if(l) got.push(JSON.parse(l)); } });
+      return {s,got,say:m=>s.write(JSON.stringify(m)+'\n')};
+    };
+    const SES=o=>Object.assign({t:'session',phase:'focus',running:true,left:1500,total:3000,focus:0,goal:7200,label:'TUTOR'},o);
+    await run(`pomPause();selectPhase('break');0`);
+    const own=await run(`({phase:pom.phase,remaining:pom.remaining,total:pom.total})`);
+    let T=await linkTo();
+    T.say({t:'hello',app:'TUTOR',v:1}); T.say(SES()); await pause(600);
+    assert.deepEqual(T.got[0],{t:'hello',app:'FLOW',v:1});
+    v=await run(`({linked:document.body.classList.contains('linked'),badge:$('link-badge').checkVisibility(),phase:$('pom-phase').textContent,
+      total:pom.total,left:pom.remaining,running:pom.running,tray:trayTip})`);
+    assert(v.linked&&v.badge&&v.phase==='TUTOR · Focus'&&v.total===3000&&v.left>=1499&&v.left<=1500&&v.running&&v.tray.startsWith('FLOW · linked to TUTOR'),JSON.stringify(v));
+    await shot('12-linked'); await fit('standard, linked');
+    await run(`audio.pause();0`); await run(SYS()); await pause(300);
+    assert.deepEqual(await run(`({src,sync:settings.sync,playing:sys.playing})`),{src:'sys',sync:true,playing:true});
+    sysSent.length=0;
+    T.say(SES({phase:'break',left:600,total:600})); await pause(400);
+    T.say(SES({phase:'focus',left:3000,total:3000})); await pause(400);
+    assert.deepEqual(sysSent.map(c=>c.cmd),['pause','play'],'music follows TUTOR\'s break');
+    await run(`$('pom-start').click();$('pom-skip').click();pomReset();selectPhase('long');0`); await pause(300);
+    assert.deepEqual(T.got.slice(1).map(m=>m.cmd),['toggle','skip'],'FLOW\'s buttons go to TUTOR');
+    assert.equal(await run(`pom.total`),3000,'reset and the phase tabs leave TUTOR\'s session alone');
+    T.say({t:'bye'}); await pause(400);
+    v=await run(`({linked:document.body.classList.contains('linked'),phase:pom.phase,remaining:pom.remaining,total:pom.total})`);
+    assert.deepEqual(v,{linked:false,...own},'unlinked, FLOW\'s own timer is back');
+    // the badge unlinks from FLOW's side: TUTOR hears bye and the pipe closes
+    T=await linkTo(); T.say({t:'hello',app:'TUTOR',v:1}); await pause(300);
+    const closed=new Promise(r=>T.s.once('close',r));
+    await run(`$('link-badge').click();0`);
+    await Promise.race([closed,pause(1500)]);
+    assert(T.got.some(m=>m.t==='bye')&&T.s.destroyed,'the badge unlinks: '+JSON.stringify(T.got));
+    assert.equal(await run(`document.body.classList.contains('linked')`),false);
 
     // persistence across a reload
     await run(`pomPause();setSetting('theme','orchid');setSetting('timerStyle','mosaic');setSetting('vizStyle','burst');setSetting('vizSens',1.6);0`);

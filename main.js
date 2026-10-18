@@ -2,6 +2,7 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, screen, session, shell } = requ
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const net = require('net');
 const mark = require('./mark');
 
 // The two resizable views. Mini's size comes from the renderer (it grows while a
@@ -333,8 +334,65 @@ ipcMain.on('sys:cmd', (e, { cmd, arg }) => {
 });
 app.on('will-quit', () => { sys.want = false; sysStop(); });
 
+/* ── The TUTOR link ──
+   TUTOR (the CAP study app) connects to this pipe when its link button is
+   pressed, launching FLOW with --tutor-link first if it is not running. One
+   JSON object per line. While linked TUTOR is the clock: its session is
+   forwarded to the renderer, which mirrors it; FLOW's timer buttons come back
+   here as commands. The last session is kept so a window that loads late
+   still gets it. FLOW_LINK_PIPE moves the pipe (the GUI test uses its own). */
+const LINK_PIPE = process.env.FLOW_LINK_PIPE || '\\\\.\\pipe\\hugo-flow-link';
+const link = { server: null, sock: null, last: null };
+function linkToRenderer(m) { if (win && !win.isDestroyed()) win.webContents.send('link:msg', m); }
+function linkSend(m) { if (link.sock && !link.sock.destroyed) { try { link.sock.write(JSON.stringify(m) + '\n'); } catch {} } }
+function linkDrop(s) {
+  if (link.sock !== s) return;
+  link.sock = null; link.last = null;
+  linkToRenderer({ t: 'state', on: false });
+}
+function linkServe() {
+  link.server = net.createServer(s => {
+    if (link.sock) { linkSend({ t: 'bye' }); try { link.sock.destroy(); } catch {} }
+    link.sock = s;
+    let buf = '';
+    s.setEncoding('utf8');
+    s.on('data', d => {
+      buf += d;
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line) continue;
+        let m; try { m = JSON.parse(line); } catch { continue; }
+        if (link.sock !== s) return;
+        if (m.t === 'hello') { linkSend({ t: 'hello', app: 'FLOW', v: 1 }); linkToRenderer({ t: 'state', on: true }); }
+        else if (m.t === 'show') { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } }
+        else if (m.t === 'session') { link.last = m; linkToRenderer(m); }
+        else if (m.t === 'bye') { try { s.end(); } catch {} linkDrop(s); }
+      }
+    });
+    s.on('close', () => linkDrop(s));
+    s.on('error', () => {});
+  });
+  link.server.on('error', () => {});   // the pipe is taken (another FLOW build): FLOW runs unlinked
+  link.server.listen(LINK_PIPE);
+}
+ipcMain.on('link:ready', () => {
+  if (!link.sock) return;
+  linkToRenderer({ t: 'state', on: true });
+  if (link.last) linkToRenderer(link.last);
+});
+ipcMain.on('link:cmd', (e, cmd) => {
+  if (/^(toggle|skip|end)$/.test(cmd)) linkSend({ t: 'cmd', cmd });
+  else if (cmd === 'unlink' && link.sock) { const s = link.sock; linkSend({ t: 'bye' }); try { s.end(); } catch {} linkDrop(s); }
+});
+app.on('will-quit', () => {
+  if (link.sock) { linkSend({ t: 'bye' }); try { link.sock.end(); } catch {} }
+  if (link.server) try { link.server.close(); } catch {}
+});
+
 app.whenReady().then(() => {
   if (!primary) return;
+  linkServe();
   // the visualiser's ears for other apps: system audio loopback, no picker. The "video" half
   // of the request is FLOW's own page (no screen capture), and the renderer stops it at once.
   session.defaultSession.setDisplayMediaRequestHandler((req, cb) => {

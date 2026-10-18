@@ -411,6 +411,38 @@ Hugo opens the packaged FLOW.
 
 ---
 
+## 2026-10-18 (later) — Linked to TUTOR
+
+TUTOR (the new CAP study app, `github/tutor`) has a session timer with goal time and
+breaks, and a "link to FLOW" button. Hugo's ask: *"opens flow, links both apps … flow has
+a visual cue that it's linked to tutor."* Agreed design: **TUTOR is the clock**, FLOW
+follows.
+
+- **Pipe** — main listens on `\\.\pipe\hugo-flow-link` (`FLOW_LINK_PIPE` overrides it),
+  one JSON object per line. TUTOR connects when its button is pressed; if FLOW isn't
+  running it launches `FLOW.exe --tutor-link` and retries. Messages: TUTOR → `hello`,
+  `session {phase, running, left, total, focus, goal}` every 2 s and on each change,
+  `show`, `bye`; FLOW → `hello`, `cmd toggle|skip|end`, `bye`. The last session is kept
+  in main and replayed when the renderer (re)loads (`link:ready`).
+- **Renderer** — while linked, FLOW's timer mirrors TUTOR's session (phase, time left,
+  running, with a local 1 s count between messages); the phase label reads
+  `TUTOR · Focus`. A phase change runs FLOW's own `musicToBreak` / `musicToFocus`
+  (and chime), so music and the other app pause on TUTOR's breaks exactly like FLOW's
+  own pomodoro. Start/pause and skip send `toggle` / `skip` back; reset and the phase tabs
+  are dimmed and only toast. FLOW's own timer state is saved on link and restored on
+  unlink. Linked focus time is not added to FLOW's daily count (TUTOR records it).
+- **Cue** — a phase-coloured `🔗 TUTOR` chip next to the wordmark (icon only in minimal),
+  tray tip `FLOW · linked to TUTOR`. Clicking the chip unlinks (sends `bye`).
+
+**Verified:** `npm run test:ui` passes with a stand-in TUTOR on a private pipe: hello
+handshake, mirrored phase/time/running, tray tip, layout fit (`shot-12-linked.png`),
+Spotify paused on TUTOR's break and resumed on focus, FLOW's buttons arriving as
+`toggle`/`skip`, reset/tabs leaving the session alone, `bye` restoring FLOW's own timer,
+and the chip unlinking from FLOW's side. **Not yet seen:** the two packaged apps linked
+for real.
+
+---
+
 ## Open follow-ups
 - The visualiser was tuned on a generated loop. Real tracks may want a different default
   sensitivity (Settings → Visualiser → Sensitivity).

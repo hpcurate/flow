@@ -278,7 +278,7 @@ let trayTip='';
 function updateTray(){
   if(!winAPI||!winAPI.setTray) return;
   const t=tracks[current], s=src==='sys'?sys:null;
-  let str='FLOW';
+  let str=link.on?'FLOW · linked to TUTOR':'FLOW';
   if(pom.running) str+=` · ${phaseLabel()} ${clockText(pom.remaining)}`;
   if(s){ if(s.playing) str+=' · ♪ '+(s.title||appName(s.app))+(s.artist?' — '+s.artist:''); }
   else if(t&&!audio.paused) str+=' · ♪ '+stripExt(t.name);
@@ -530,7 +530,7 @@ function renderPom(){
   setClock($('pom-time'),clockText(pom.remaining));
   $('pom-time').classList.toggle('long',pom.remaining>=6000);
   document.body.dataset.phase=pom.phase==='focus'?'focus':'break';
-  $('pom-phase').textContent=phaseLabel()+(!pom.running&&pom.remaining<pom.total?' · paused':'');
+  $('pom-phase').textContent=(link.on?'TUTOR · ':'')+phaseLabel()+(!pom.running&&pom.remaining<pom.total?' · paused':'');
   const lbl=pom.running?'Pause':pom.remaining<pom.total?'Resume':pom.phase==='focus'?'Start focus':'Start break';
   $('pom-start-lbl').textContent=lbl;
   $('pom-start-ico').innerHTML=pom.running?ICO_PAUSE:ICO_PLAY;
@@ -553,28 +553,33 @@ function pomTick(){
   if(pom.remaining<=0) pomPhaseEnd();
   renderPom();
 }
+function musicForFocus(){
+  if(!settings.sync) return;
+  if(src==='sys'){ if(sys&&!sys.playing) sysCmd('play'); }
+  else if(current>=0 && audio.paused){ audio.volume=0; audio.play().catch(()=>{}); fadeEl(audio,master(),1500); }
+}
 function pomStart(){
+  if(link.on){ winAPI.linkCmd('toggle'); return; }
   if(pom.running){ pomPause(); return; }
   pom.running=true; pom.tickAt=performance.now();
   pom.timer=setInterval(pomTick,1000);
-  if(settings.sync && pom.phase==='focus'){
-    if(src==='sys'){ if(!sys.playing) sysCmd('play'); }
-    else if(current>=0 && audio.paused){ audio.volume=0; audio.play().catch(()=>{}); fadeEl(audio,master(),1500); }
-  }
+  if(pom.phase==='focus') musicForFocus();
   renderPom();
 }
 function pomPause(){
   pom.running=false; clearInterval(pom.timer); renderPom();
 }
 function pomReset(){
+  if(link.on){ toast('The session runs from TUTOR — end it there'); return; }
   pomPause(); pom.phase='focus'; pom.long=false; setRemaining(settings.focus*60); renderPom();
 }
-function pomSkip(){ pomPhaseEnd(); }
+function pomSkip(){ if(link.on){ winAPI.linkCmd('skip'); return; } pomPhaseEnd(); }
 function pomResetCount(){
   pom.sessions=0; savePomSessions(); renderPom(); toast('Session count reset');
 }
 /* picking a phase by hand: switch the timer only, leave the music alone */
 function selectPhase(key){
+  if(link.on){ toast('Linked to TUTOR — its session sets the phase'); return; }
   pomPause();
   pom.phase=key==='focus'?'focus':'break';
   pom.long=key==='long';
@@ -648,6 +653,50 @@ function pomPhaseEnd(){
     if(settings.autoNext){ pom.tickAt=performance.now(); pom.timer=setInterval(pomTick,1000); }
     else pom.running=false;
   }
+  renderPom();
+}
+
+/* ════════════ The TUTOR link ════════════
+   While TUTOR is linked it is the clock. Its session arrives every couple of
+   seconds and on every change; FLOW's timer mirrors it (phase, time left,
+   running) and the music follows its breaks with the same sync transitions as
+   FLOW's own pomodoro. FLOW's timer buttons send commands back to TUTOR. When
+   the link drops, FLOW's own timer comes back exactly as it was. */
+const link={on:false, saved:null, phase:null};
+function setLinked(on){
+  if(on===link.on) return;
+  link.on=on;
+  document.body.classList.toggle('linked',on);
+  clearInterval(pom.timer);
+  if(on){
+    link.saved={phase:pom.phase,long:pom.long,remaining:pom.remaining,total:pom.total};
+    pom.running=false;
+    toast('Linked to TUTOR');
+  } else {
+    pom.running=false;
+    if(link.saved) Object.assign(pom,link.saved);
+    link.saved=null; link.phase=null;
+    toast('Unlinked from TUTOR');
+  }
+  renderPom();
+}
+function linkTick(){ if(pom.remaining>0) pom.remaining--; pom.tickAt=performance.now(); renderPom(); }
+function onLink(m){
+  if(m.t==='state'){ setLinked(!!m.on); return; }
+  if(m.t!=='session') return;
+  if(!link.on) setLinked(true);
+  clearInterval(pom.timer);
+  if(m.phase==='idle'){ pom.running=false; pom.phase='focus'; renderPom(); return; }
+  const ph=m.phase==='break'?'break':'focus';
+  if(link.phase&&link.phase!==ph){
+    if(settings.chime) chime();
+    if(ph==='break') musicToBreak(); else musicToFocus();
+  } else if(!link.phase&&ph==='focus'&&m.running) musicForFocus();
+  link.phase=ph;
+  pom.phase=ph; pom.long=false;
+  pom.total=Math.max(1,m.total|0); pom.remaining=Math.max(0,m.left|0);
+  pom.running=!!m.running; pom.tickAt=performance.now();
+  if(pom.running) pom.timer=setInterval(linkTick,1000);
   renderPom();
 }
 
@@ -1187,6 +1236,8 @@ function init(){
 
   // other apps' media; the bridge reports position only now and then, so tick the bar here
   if(winAPI&&winAPI.onSys) winAPI.onSys(onSys);
+  if(winAPI&&winAPI.onLink) winAPI.onLink(onLink);
+  $('link-badge').onclick=()=>{ if(winAPI&&winAPI.linkCmd) winAPI.linkCmd('unlink'); setLinked(false); };
   setInterval(()=>{ if(src==='sys'&&sys&&sys.playing) reflectTime(); },500);
 
   // noise generator
