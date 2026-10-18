@@ -86,7 +86,7 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.2)}
 .brand{display:flex;align-items:center;gap:11px;min-width:0}
 .mark{width:24px;height:24px}
 .wordmark{font:800 18px/1 var(--display);letter-spacing:.04em}
-/* linked to TUTOR: a phase-coloured chip by the wordmark (TUTOR runs the timer) */
+/* linked (TUTOR, GRIND): a phase-coloured chip by the wordmark, named for the app running the timer */
 .link-badge{display:none;height:24px;align-items:center;gap:6px;padding:0 10px 0 8px;border-radius:999px;
   background:var(--phase);color:var(--on-phase);font:700 11px/1 var(--mono);letter-spacing:.08em;-webkit-app-region:no-drag;
   transition:background .4s,color .4s}

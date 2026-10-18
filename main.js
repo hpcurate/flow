@@ -334,26 +334,34 @@ ipcMain.on('sys:cmd', (e, { cmd, arg }) => {
 });
 app.on('will-quit', () => { sys.want = false; sysStop(); });
 
-/* ── The TUTOR link ──
-   TUTOR (the CAP study app) connects to this pipe when its link button is
-   pressed, launching FLOW with --tutor-link first if it is not running. One
-   JSON object per line. While linked TUTOR is the clock: its session is
-   forwarded to the renderer, which mirrors it; FLOW's timer buttons come back
-   here as commands. The last session is kept so a window that loads late
-   still gets it. FLOW_LINK_PIPE moves the pipe (the GUI test uses its own). */
+/* ── The link (TUTOR, GRIND) ──
+   An app with a session clock (TUTOR, GRIND) connects to this pipe when its
+   link button is pressed, launching FLOW first if it is not running. One
+   JSON object per line; its hello names it. While linked that app is the
+   clock: its session is forwarded to the renderer, which mirrors it; FLOW's
+   timer buttons come back here as commands. One app at a time — a new one
+   takes over and the old one is told bye. The last session is kept so a
+   window that loads late still gets it. FLOW_LINK_PIPE moves the pipe (the
+   GUI test uses its own). */
 const LINK_PIPE = process.env.FLOW_LINK_PIPE || '\\\\.\\pipe\\hugo-flow-link';
-const link = { server: null, sock: null, last: null };
+const link = { server: null, sock: null, last: null, app: '' };
+const linkName = a => String(a || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 12).toUpperCase() || 'APP';
 function linkToRenderer(m) { if (win && !win.isDestroyed()) win.webContents.send('link:msg', m); }
 function linkSend(m) { if (link.sock && !link.sock.destroyed) { try { link.sock.write(JSON.stringify(m) + '\n'); } catch {} } }
 function linkDrop(s) {
   if (link.sock !== s) return;
-  link.sock = null; link.last = null;
+  link.sock = null; link.last = null; link.app = '';
   linkToRenderer({ t: 'state', on: false });
 }
 function linkServe() {
   link.server = net.createServer(s => {
-    if (link.sock) { linkSend({ t: 'bye' }); try { link.sock.destroy(); } catch {} }
-    link.sock = s;
+    if (link.sock) {
+      const old = link.sock;
+      linkSend({ t: 'bye' });
+      try { old.end(); } catch {}
+      setTimeout(() => { try { old.destroy(); } catch {} }, 1000);   // end() lets the bye through first
+    }
+    link.sock = s; link.last = null; link.app = '';
     let buf = '';
     s.setEncoding('utf8');
     s.on('data', d => {
@@ -364,7 +372,7 @@ function linkServe() {
         if (!line) continue;
         let m; try { m = JSON.parse(line); } catch { continue; }
         if (link.sock !== s) return;
-        if (m.t === 'hello') { linkSend({ t: 'hello', app: 'FLOW', v: 1 }); linkToRenderer({ t: 'state', on: true }); }
+        if (m.t === 'hello') { link.app = linkName(m.app); linkSend({ t: 'hello', app: 'FLOW', v: 1 }); linkToRenderer({ t: 'state', on: true, app: link.app }); }
         else if (m.t === 'show') { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } }
         else if (m.t === 'session') { link.last = m; linkToRenderer(m); }
         else if (m.t === 'bye') { try { s.end(); } catch {} linkDrop(s); }
@@ -377,8 +385,8 @@ function linkServe() {
   link.server.listen(LINK_PIPE);
 }
 ipcMain.on('link:ready', () => {
-  if (!link.sock) return;
-  linkToRenderer({ t: 'state', on: true });
+  if (!link.sock || !link.app) return;
+  linkToRenderer({ t: 'state', on: true, app: link.app });
   if (link.last) linkToRenderer(link.last);
 });
 ipcMain.on('link:cmd', (e, cmd) => {

@@ -272,6 +272,19 @@ app.whenReady().then(async()=>{
     await Promise.race([closed,pause(1500)]);
     assert(T.got.some(m=>m.t==='bye')&&T.s.destroyed,'the badge unlinks: '+JSON.stringify(T.got));
     assert.equal(await run(`document.body.classList.contains('linked')`),false);
+    // a second app (GRIND) takes over: the first hears bye, the chip and the clock follow the
+    // newcomer, and FLOW's own timer is still underneath when it goes
+    T=await linkTo(); T.say({t:'hello',app:'TUTOR',v:1}); T.say(SES()); await pause(400);
+    const tClosed=new Promise(r=>T.s.once('close',r));
+    const G=await linkTo(); G.say({t:'hello',app:'GRIND',v:1}); G.say(SES({left:1200,total:1500,label:'GRIND'}));
+    await Promise.race([tClosed,pause(2000)]); await pause(300);
+    assert(T.got.some(m=>m.t==='bye')&&T.s.destroyed,'the first app is told bye: '+JSON.stringify(T.got));
+    v=await run(`({chip:$('link-badge').textContent,title:$('link-badge').title,phase:$('pom-phase').textContent,total:pom.total,tray:trayTip})`);
+    assert(v.chip==='GRIND'&&v.title.startsWith('Linked to GRIND')&&v.phase==='GRIND · Focus'&&v.total===1500&&v.tray.startsWith('FLOW · linked to GRIND'),JSON.stringify(v));
+    await shot('12-linked-grind');
+    G.say({t:'bye'}); await pause(400);
+    v=await run(`({linked:document.body.classList.contains('linked'),phase:pom.phase,remaining:pom.remaining,total:pom.total})`);
+    assert.deepEqual(v,{linked:false,...own},'the takeover kept FLOW\'s own timer');
 
     // persistence across a reload
     await run(`pomPause();setSetting('theme','orchid');setSetting('timerStyle','mosaic');setSetting('vizStyle','burst');setSetting('vizSens',1.6);0`);

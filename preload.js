@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('flowAPI', {
   sysMedia: (on) => ipcRenderer.send('sys:enable', !!on),
   sysCmd: (cmd, arg) => ipcRenderer.send('sys:cmd', { cmd, arg }),
   onSys: (cb) => ipcRenderer.on('sys:msg', (_e, msg) => cb(msg)),
-  // the TUTOR link: its session in, FLOW's timer buttons out (toggle / skip / end)
+  // the link (TUTOR, GRIND): the app's session in, FLOW's timer buttons out (toggle / skip / end)
   onLink: (cb) => { ipcRenderer.on('link:msg', (_e, msg) => cb(msg)); ipcRenderer.send('link:ready'); },
   linkCmd: (cmd) => ipcRenderer.send('link:cmd', cmd)
 });

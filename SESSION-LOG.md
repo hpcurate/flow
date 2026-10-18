@@ -443,6 +443,31 @@ for real.
 
 ---
 
+## 2026-10-18 (evening) — GRIND links too
+
+Hugo asked for the same link (and TUTOR's session bar) in GRIND. FLOW's side is now
+app-neutral:
+
+- **Named by its hello** — main keeps `link.app` from the hello (`TUTOR`, `GRIND`;
+  letters and digits, max 12, upper-cased) and sends it with the `state` message. The
+  chip, its tooltip, the `GRIND · Focus` phase label, the tray tip (`FLOW · linked to
+  GRIND`) and the toasts all use it.
+- **One app at a time** — a new connection takes over: the old one gets `bye` and its
+  socket is `end()`ed (was `destroy()`, which could drop the bye before it was written),
+  destroyed a second later if still open. The renderer switches the name in place and
+  keeps FLOW's saved own timer, so whichever app lets go last, FLOW's timer comes back
+  as it was.
+
+**Verified:** `npm run test:ui` adds a takeover check (TUTOR linked, GRIND connects:
+TUTOR hears bye and closes, chip/label/tray say GRIND, `bye` restores FLOW's own timer;
+`shot-12-linked-grind.png`). Note: this evening the mini-bar assertion
+`win.isAlwaysOnTop()` fails on this PC for the committed code too — Electron's
+`setAlwaysOnTop(true,'floating')` is called and Windows reports the window as not topmost.
+Machine state, not a regression; the rest of the run passes with that one check
+relaxed. Re-check it another time before trusting a failure there.
+
+---
+
 ## Open follow-ups
 - The visualiser was tuned on a generated loop. Real tracks may want a different default
   sensitivity (Settings → Visualiser → Sensitivity).

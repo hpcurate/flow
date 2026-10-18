@@ -278,7 +278,7 @@ let trayTip='';
 function updateTray(){
   if(!winAPI||!winAPI.setTray) return;
   const t=tracks[current], s=src==='sys'?sys:null;
-  let str=link.on?'FLOW · linked to TUTOR':'FLOW';
+  let str=link.on?'FLOW · linked to '+link.app:'FLOW';
   if(pom.running) str+=` · ${phaseLabel()} ${clockText(pom.remaining)}`;
   if(s){ if(s.playing) str+=' · ♪ '+(s.title||appName(s.app))+(s.artist?' — '+s.artist:''); }
   else if(t&&!audio.paused) str+=' · ♪ '+stripExt(t.name);
@@ -530,7 +530,7 @@ function renderPom(){
   setClock($('pom-time'),clockText(pom.remaining));
   $('pom-time').classList.toggle('long',pom.remaining>=6000);
   document.body.dataset.phase=pom.phase==='focus'?'focus':'break';
-  $('pom-phase').textContent=(link.on?'TUTOR · ':'')+phaseLabel()+(!pom.running&&pom.remaining<pom.total?' · paused':'');
+  $('pom-phase').textContent=(link.on?link.app+' · ':'')+phaseLabel()+(!pom.running&&pom.remaining<pom.total?' · paused':'');
   const lbl=pom.running?'Pause':pom.remaining<pom.total?'Resume':pom.phase==='focus'?'Start focus':'Start break';
   $('pom-start-lbl').textContent=lbl;
   $('pom-start-ico').innerHTML=pom.running?ICO_PAUSE:ICO_PLAY;
@@ -570,7 +570,7 @@ function pomPause(){
   pom.running=false; clearInterval(pom.timer); renderPom();
 }
 function pomReset(){
-  if(link.on){ toast('The session runs from TUTOR — end it there'); return; }
+  if(link.on){ toast(`The session runs from ${link.app} — end it there`); return; }
   pomPause(); pom.phase='focus'; pom.long=false; setRemaining(settings.focus*60); renderPom();
 }
 function pomSkip(){ if(link.on){ winAPI.linkCmd('skip'); return; } pomPhaseEnd(); }
@@ -579,7 +579,7 @@ function pomResetCount(){
 }
 /* picking a phase by hand: switch the timer only, leave the music alone */
 function selectPhase(key){
-  if(link.on){ toast('Linked to TUTOR — its session sets the phase'); return; }
+  if(link.on){ toast(`Linked to ${link.app} — its session sets the phase`); return; }
   pomPause();
   pom.phase=key==='focus'?'focus':'break';
   pom.long=key==='long';
@@ -656,14 +656,24 @@ function pomPhaseEnd(){
   renderPom();
 }
 
-/* ════════════ The TUTOR link ════════════
-   While TUTOR is linked it is the clock. Its session arrives every couple of
+/* ════════════ The link (TUTOR, GRIND) ════════════
+   While an app is linked it is the clock. Its session arrives every couple of
    seconds and on every change; FLOW's timer mirrors it (phase, time left,
    running) and the music follows its breaks with the same sync transitions as
-   FLOW's own pomodoro. FLOW's timer buttons send commands back to TUTOR. When
-   the link drops, FLOW's own timer comes back exactly as it was. */
-const link={on:false, saved:null, phase:null};
-function setLinked(on){
+   FLOW's own pomodoro. FLOW's timer buttons send commands back to it. Another
+   app linking takes over (main tells the first one bye); FLOW's own timer
+   stays put underneath. When the link drops, it comes back exactly as it was. */
+const link={on:false, app:'', saved:null, phase:null};
+function showLinkApp(){
+  const b=$('link-badge');
+  b.querySelector('span').textContent=link.app;
+  b.title=`Linked to ${link.app} — its session runs the timer. Click to unlink`;
+}
+function setLinked(on,app){
+  if(on&&app&&app!==link.app){
+    link.app=app; showLinkApp();
+    if(link.on){ link.phase=null; toast('Linked to '+app); renderPom(); return; }
+  }
   if(on===link.on) return;
   link.on=on;
   document.body.classList.toggle('linked',on);
@@ -671,18 +681,18 @@ function setLinked(on){
   if(on){
     link.saved={phase:pom.phase,long:pom.long,remaining:pom.remaining,total:pom.total};
     pom.running=false;
-    toast('Linked to TUTOR');
+    toast('Linked to '+link.app);
   } else {
     pom.running=false;
     if(link.saved) Object.assign(pom,link.saved);
     link.saved=null; link.phase=null;
-    toast('Unlinked from TUTOR');
+    toast('Unlinked from '+link.app);
   }
   renderPom();
 }
 function linkTick(){ if(pom.remaining>0) pom.remaining--; pom.tickAt=performance.now(); renderPom(); }
 function onLink(m){
-  if(m.t==='state'){ setLinked(!!m.on); return; }
+  if(m.t==='state'){ setLinked(!!m.on,m.app); return; }
   if(m.t!=='session') return;
   if(!link.on) setLinked(true);
   clearInterval(pom.timer);
