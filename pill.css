@@ -59,7 +59,9 @@ body.through.ctrl .pill,body.through.ctrl .tc{opacity:var(--op);border-color:var
 .sz-m .bars{min-width:90px}
 .bars span{display:block;height:6px;border-radius:6px;background:var(--s3);overflow:hidden}
 .bars .nx{height:3px}
-.bars b{display:block;height:100%;width:0;background:var(--k1);border-radius:6px;transition:width .9s linear}
+/* progress fills: set 4 times a second, no transition — eased, the pill (see-through, over everything)
+   redrew itself every frame (2026-10-21) */
+.bars b{display:block;height:100%;width:0;background:var(--k1);border-radius:6px}
 .bars .nx b{background:var(--k2)}
 .break .bars b{background:var(--k3)}
 .paused .bars b{background:var(--mu)}
@@ -97,7 +99,7 @@ body.through:not(.ctrl) .pill.run:hover .ctl .ib,.pill.dragging .ctl .ib{animati
 
 /* the music: four bars, FLOW's colours; hover them for the track, click to play / pause */
 .viz{display:flex;align-items:flex-end;gap:2px;height:16px;padding:0 3px;flex-shrink:0;border-radius:6px}
-.viz i{display:block;width:3px;height:100%;border-radius:2px;background:var(--c1);transform-origin:50% 100%;transform:scaleY(.16);transition:transform .07s linear}
+.viz i{display:block;width:3px;height:100%;border-radius:2px;background:var(--c1);transform-origin:50% 100%;transform:scaleY(.16)}
 .viz i:nth-child(2){background:var(--c2)}
 .viz i:nth-child(3){background:var(--c3)}
 .viz i:nth-child(4){background:var(--c5)}
@@ -154,7 +156,7 @@ body.through:not(.ctrl) .pill.run:hover .ctl .ib,.pill.dragging .ctl .ib{animati
   font:700 11px var(--mono);line-height:max(calc(var(--h) - 10px),16px);max-width:130px;overflow:hidden;text-overflow:ellipsis}
 .tt{font:700 12px/1 var(--mono);font-variant-numeric:tabular-nums}
 .tb{width:34px;height:4px;border-radius:4px;background:var(--s3);overflow:hidden;flex-shrink:0}
-.tb b{display:block;height:100%;width:0;background:var(--tc);border-radius:4px;transition:width .25s linear}
+.tb b{display:block;height:100%;width:0;background:var(--tc);border-radius:4px}
 .tx{display:flex;align-items:center;gap:2px;flex-shrink:0;width:0;margin:0 0 0 -8px;overflow:hidden;opacity:0;pointer-events:none;
   transition:width .42s var(--bounce),margin .42s var(--bounce),opacity .18s}
 .tx .ib{width:24px;height:24px}

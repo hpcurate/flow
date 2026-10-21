@@ -23,7 +23,7 @@ let tracks=[];          // {id,name,url,duration}
 let current=-1;         // index into tracks
 let loopMode=0;         // 0 off · 1 all · 2 one
 let shuffle=false;
-const VIZ_DEFAULTS={vizSens:1,vizSmooth:.5,vizSpeed:1,vizDensity:.5,vizScale:1,vizColor:'palette',fps:60,fsClock:true,fsTrack:true};
+const VIZ_DEFAULTS={vizSens:1,vizSmooth:.5,vizSpeed:1,vizDensity:.5,vizScale:1,vizColor:'palette',fps:60,restSlow:true,fsClock:true,fsTrack:true};
 const DEFAULTS={focus:25,brk:5,longBrk:15,longEvery:4,goal:4,sync:true,autoNext:true,chime:true,
   vol:80,breakTrackId:null,noise:'off',noiseVol:40,intention:'',sysMedia:true,
   theme:'bauhaus',depth:'darker',grain:true,motion:'full',side:'player',
@@ -73,6 +73,7 @@ function loadSettings(){
   keep('fsContent',v=>v==='music'||v==='timer');
   keep('side',v=>v==='player'||v==='library');
   keep('fps',v=>v===30||v===60);
+  keep('restSlow',v=>typeof v==='boolean');
   for(const k of ['focus','brk','longBrk','longEvery','goal','vol','noiseVol','vizSens','vizSmooth','vizSpeed','vizDensity','vizScale','vizSeed'])
     keep(k,v=>typeof v==='number'&&isFinite(v));
 }
@@ -297,6 +298,7 @@ function reflectPlayState(){
   const mine=flowPlaying(), playing=src==='sys'?!!(sys&&sys.playing):mine;
   for(const id of ['play-ico','sp-play-ico','mini-play-ico','zen-play-ico']) $(id).innerHTML=playing?ICO_PAUSE:ICO_PLAY;
   document.body.classList.toggle('is-playing',playing);
+  if(playing) kick();
   document.querySelectorAll('.track').forEach(el=>el.classList.toggle('playing',+el.dataset.i===current&&mine));
   if('mediaSession' in navigator){
     try{ navigator.mediaSession.playbackState=mine?'playing':'paused'; }catch{}
@@ -892,6 +894,7 @@ function measureLabel(sp){
 }
 function measureLabels(){ document.querySelectorAll('.mode-btn span,.link-badge span').forEach(measureLabel); }
 function reflectModes(){
+  kick();
   const cur=zenOn?'fullscreen':miniOn?'mini':winMode;
   document.querySelectorAll('[data-mode]').forEach(b=>{ const on=b.dataset.mode===cur; b.classList.toggle('on',on); b.setAttribute('aria-pressed',on); });
   $('pin-btn').classList.toggle('on',onTop); $('pin-btn').setAttribute('aria-pressed',onTop);
@@ -1136,12 +1139,13 @@ function pillPom(){
   if(k===pillPomKey) return;
   pillPomKey=k; winAPI.pillExt('pom',v);
 }
-/* the music bars: bass, low mids, high mids, highs, ~30 times a second while the pill shows them */
+/* the music bars: bass, low mids, high mids, highs, 20 times a second while the pill shows them
+   (was 30, each eased: the pill, a see-through window over everything, never stopped redrawing) */
 const PV_BANDS=[[40,160],[160,640],[640,2560],[2560,10000]];
 let pvT=null, pvBuf=null, pvSent='';
 const pvLev=[0,0,0,0];
 function pillVizLoop(on){
-  if(on&&!pvT) pvT=setInterval(pillVizTick,33);
+  if(on&&!pvT) pvT=setInterval(pillVizTick,50);
   else if(!on&&pvT){ clearInterval(pvT); pvT=null; pvSent=''; }
 }
 function pillVizTick(){
@@ -1433,11 +1437,48 @@ function vopts(bg,ph,dt,extra){
     dens:settings.vizDensity, sc:settings.vizScale, seed:settings.vizSeed, hole:false, decor:false,
   },extra);
 }
-function frame(now){
-  requestAnimationFrame(frame);
+/* the loop's pace (Hugo, 2026-10-21: "up to 8% CPU"; measured with npm run perf):
+   - nothing on screen (hidden, minimised): it stops; kick() starts it again (vis, modes, focus);
+   - the mini bar: only its little cover turns, ~15 times a second while music plays;
+   - in use (FLOW has the focus, or the pointer moved over it in the last 8 s) and full screen: settings.fps;
+   - otherwise ("at rest", e.g. FLOW on the other screen): 20 fps, unless settings.restSlow is off.
+   Below 50 fps a timer wakes it for the next frame: a rAF that returns early still costs a frame at 60 Hz. */
+const REST_MS=8000, REST_FPS=20, ART_FPS=15;
+let looping=false, pointerAt=0;
+const awake=()=>document.hasFocus()||performance.now()-pointerAt<REST_MS;
+const musicOn=()=>document.body.classList.contains('is-playing');
+function loopFps(){
+  if(document.hidden||!winShown) return 0;
   const still=settings.motion==='still';
-  if(now-lastT<1000/(still?4:settings.fps)-4) return;
+  if(miniOn) return !still&&musicOn()?ART_FPS:0;
+  if(still) return 4;
+  if(zenOn||!settings.restSlow||awake()) return settings.fps;
+  return Math.min(settings.fps,REST_FPS);
+}
+function kick(){ if(looping) return; looping=true; lastT=performance.now()-1000; requestAnimationFrame(frame); }
+addEventListener('pointermove',()=>{ const was=pointerAt; pointerAt=performance.now(); if(pointerAt-was>REST_MS) kick(); },{passive:true,capture:true});
+addEventListener('focus',kick);
+document.addEventListener('visibilitychange',kick);
+/* the covers' turning shapes (.art .sp): turned here, ~15 times a second while music plays — a CSS
+   animation redrew the big cover 60 times a second, and went on with FLOW hidden (~3% of the CPU) */
+let artA=0, artAt=0;
+function spinArt(now){
+  if(now-artAt<1000/ART_FPS-4) return;
+  const dt=Math.min(250,now-artAt); artAt=now;
+  if(settings.motion==='still'||!musicOn()) return;
+  artA=(artA+dt*360/26000)%360;
+  const t=`rotate(${artA.toFixed(2)}deg)`;
+  for(const e of document.querySelectorAll('.art .sp')) e.style.transform=t;
+}
+function frame(now){
+  const fps=loopFps();
+  if(!fps){ looping=false; return; }
+  if(fps>=50) requestAnimationFrame(frame);
+  else setTimeout(()=>requestAnimationFrame(frame),Math.max(0,1000/fps-6));
+  spinArt(now);
+  if(now-lastT<1000/fps-4) return;
   const dt=Math.min(.1,(now-lastT)/1000); lastT=now;
+  const still=settings.motion==='still';
   if(document.hidden||miniOn||!winShown) return;
   const k=still?0:settings.motion==='calm'?.45:1, vdt=dt*settings.vizSpeed*k;
   vizT+=vdt;
@@ -1579,7 +1620,7 @@ function init(){
   };
   // the pill: its settings in; the window says when it is out of sight (nothing to draw then)
   if(winAPI&&winAPI.onPill){ bindPill(); winAPI.onPill(onPill); }
-  if(winAPI&&winAPI.onVis) winAPI.onVis(on=>{ winShown=!!on; });
+  if(winAPI&&winAPI.onVis) winAPI.onVis(on=>{ winShown=!!on; kick(); });
   // the timers: one dock, parked until main says they show here; main keeps the timers themselves
   if(winAPI&&winAPI.onTimers&&window.TimersUI){
     tmUI=TimersUI.create(document.createElement('div'),m=>winAPI.timersCmd(m));
@@ -1668,6 +1709,6 @@ function init(){
   updateNP(); renderList();
   document.body.dataset.src=src; applySysMedia();
   loadLibrary();
-  requestAnimationFrame(frame);
+  kick();
 }
 init();

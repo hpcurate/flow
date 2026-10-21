@@ -177,7 +177,7 @@ function tick() {
 }
 setInterval(tick, 250);
 
-/* ── the music bars: main relays FLOW's analyser, four bands, ~30 a second ── */
+/* ── the music bars: main relays FLOW's analyser, four bands, 20 a second ── */
 P.on('pill:viz', v => {
   if (!vizEls.length || !Array.isArray(v)) return;
   for (let i = 0; i < 4; i++) vizEls[i].style.transform = `scaleY(${(.16 + Math.max(0, Math.min(100, v[i] || 0)) / 100 * .84).toFixed(3)})`;

@@ -25,7 +25,7 @@ html.tm-page{--bg:#060607;--fg:#F2EDE3;--fg2:#aeaaa3;--mu:#74716b;--s1:#111111;-
 .tm-tag{flex:0 1 auto;min-width:0;max-width:50%;height:22px;padding:0 10px;border-radius:999px;background:var(--tc);color:var(--tink);
   font:700 11.5px/22px var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .25s,color .25s}
 .tm-bar{flex:1;min-width:24px;height:6px;border-radius:6px;background:var(--s3);overflow:hidden}
-.tm-bar b{display:block;height:100%;width:0;background:var(--tc);border-radius:6px;transition:width .25s linear}
+.tm-bar b{display:block;height:100%;width:0;background:var(--tc);border-radius:6px}   /* set 4× a second: no transition (CPU, 2026-10-21) */
 .tm-left{flex-shrink:0;min-width:38px;text-align:right;font:700 12.5px/1 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 .no-left .tm-row:not(.done) .tm-left{display:none}
 .tm-btns{display:flex;gap:1px;flex-shrink:0}

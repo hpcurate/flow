@@ -1,6 +1,6 @@
 {
   "name": "flow",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "FLOW — Ambiance / Focus player",
   "main": "main.js",
   "author": "Hugo",
@@ -9,7 +9,8 @@
     "test:ui": "electron test/visual.cjs",
     "icon": "node mark.js",
     "pack": "electron-packager . FLOW --platform=win32 --arch=x64 --icon=build/icon.ico --out=dist --overwrite --prune=true --ignore=\"(^/dist|^/test|^/\\.git|^/gui-check\\.js|^/shot-.*\\.png|^/SESSION-LOG\\.md)\"",
-    "dist": "electron-builder --win --x64"
+    "dist": "electron-builder --win --x64",
+    "perf": "electron test/perf.cjs"
   },
   "build": {
     "appId": "com.hugo.flow",

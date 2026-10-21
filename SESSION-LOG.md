@@ -834,6 +834,62 @@ M 400×40 drops "break in…", the phase word and the tag and its time grows, at
 (`shot-15-settings-pill-dims`). Packed (`fromArgs`, `fitParts`, `buildPillDims` in the asar).
 Not tried: a real launch from the packed CORE into the packed FLOW.
 
+## 2026-10-21 (night) — CPU: draw only what's seen (1.3.1)
+
+Hugo's request `r261021-1ey8` (prompter): "optimize to run app, it uses to much cpu" — "up to 8%
+for flow, and 5% for core", "also applicable to flow and all the other apps". This run: CORE
+(`core/CORE.md` 0.6.1) and FLOW; the other apps stay open in the request.
+
+**Measured first:** `npm run perf` (new, `test/perf.cjs`). It uses a temp profile and a private link
+pipe. Other apps' media is turned off and FLOW plays its own generated loop with the bus cut off from
+the speakers, so the analyser hears music and the room doesn't. Electron's per-process counters plus
+FLOW's PowerShell helpers, as % of the whole CPU (Task Manager's figure, 12 threads):
+
+| state (music on) | before | after, at rest | after, in use |
+| --- | --- | --- | --- |
+| standard | 5.60 % | 1.12 % | 2.61 % |
+| minimal | 5.09 % | 0.91 % | 2.39 % |
+| full screen | 5.55 % | 2.41 % | 2.43 % |
+| mini bar | 3.54 % | 0.54 % | 0.55 % |
+| hidden | 4.62 % | 0.33 % | 0.33 % |
+| hidden + pill | 7.50 % | 1.03 % | 1.02 % |
+
+**What cost it** (by turning things off one at a time):
+- the covers' turning shapes, a CSS animation on SVG shapes: the big cover redrawn 60 times a
+  second, ~3 %, and still going with FLOW hidden (`backgroundThrottling: false` keeps a hidden page
+  painting);
+- the draw loop: the dial redrawn at 60 fps even with nothing changing, ~2 %. A rAF that returns
+  early still costs a frame, so lowering the fps alone saved little;
+- the pill: its music bars 30 times a second, each eased, plus its progress fill eased on every
+  250 ms tick. It's a see-through window over everything, so each redraw sends the whole window
+  again: ~1–3 %;
+- progress fills (mini bar, full screen, timers) set every second with `transition: width 1s`: never
+  still, a relayout every frame;
+- the film grain's `soft-light` blend multiplies every redraw under it (~0.7 %). It was left as it
+  is: the look stays, and there are far fewer redraws now.
+
+**What changed:**
+- **The draw loop's pace** (`loopFps()`, `kick()`):
+  - nothing on screen (hidden, minimised): it stops; shown again, modes, focus, visibility and
+    play restart it;
+  - the mini bar: only its little cover turns, 15 times a second while music plays;
+  - in use (focus, or the pointer moved over FLOW in the last 8 s) and full screen: `settings.fps`;
+  - otherwise 20 fps, unless Settings → Visualiser → "Slow down when you're elsewhere" (`restSlow`,
+    on) is off.
+
+  Below 50 fps a timer wakes it for the next frame.
+- **The covers turn from the loop** (`spinArt`): 15 times a second while music plays, holding their
+  angle when it stops. The CSS animation is gone.
+- **No more eased progress fills** where they're set every second or faster: `.mini-bar i`,
+  `.zen-progress i`, the pill's `.bars b` and docked `.tb b`, the timers' `.tm-bar b`. They move a
+  fraction of a pixel per step anyway.
+- **The pill's music bars:** 20 a second, no easing.
+
+**Verified:** `npm run test:ui` passes. New checks: 20 fps at rest, `settings.fps` in use and with
+"slow down" off; hidden stops the loop and showing restarts it; no CSS animation on a cover; a probe
+cover turns while music plays and holds still when it stops. `npm run perf` before / after, as in
+the table. Packed (`loopFps`, `spinArt`, `restSlow` in the asar, no `animation:spin 26s`).
+
 ## Open follow-ups
 - The visualiser was tuned on a generated loop. Real tracks may want a different default
   sensitivity (Settings → Visualiser → Sensitivity).

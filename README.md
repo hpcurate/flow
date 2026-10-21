@@ -41,7 +41,7 @@ Six styles (`V` cycles them): **Bauhaus**, **Orbit**, **Monolith**, **Strata**, 
 - colour: palette, follow the timer, or mono
 - what full screen shows (music or timer visual)
 - whether the clock and track are shown
-- 30 / 60 fps
+- 30 / 60 fps, and **slow down when you're elsewhere** (on): while FLOW isn't focused or pointed at, the dial draws 20 times a second. Full screen keeps its speed, and with nothing on screen (hidden, minimised) nothing is drawn at all
 - **New composition** to reshuffle the shapes
 
 ## Other apps (Spotify & co.)
@@ -125,6 +125,7 @@ Closing the window hides FLOW to the tray (music keeps playing); quit from the t
 npm install
 npm start        # run from source
 npm run test:ui  # GUI check: drives every view and style, asserts, saves shot-*.png
+npm run perf     # CPU per state (standard, minimal, full screen, mini, hidden, pill), % of the whole CPU
 npm run pack     # rebuild dist/FLOW-win32-x64
 ```
 

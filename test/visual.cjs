@@ -778,6 +778,30 @@ app.whenReady().then(async()=>{
     await run("document.querySelector('[data-pd-reset=s]').click();closeDrawer();0"); await pause(300);
     assert.equal(P.D.cfg.dims.s.w,232,'reset');
     P.O.end(false); M.pill.set('on',false); await pause(400);
+    // the draw loop's pace (Hugo's "up to 8% CPU", 2026-10-21): stopped with nothing on screen, 20 fps at rest,
+    // settings.fps in use; the covers' shapes turn from it while music plays, never by a CSS animation
+    await run(`document.hasFocus=()=>false;pointerAt=-1e9;setMode('standard');0`); await pause(300);
+    assert.equal(await run('loopFps()'),20,'at rest: 20 fps');
+    await run('document.hasFocus=()=>true;0');
+    const settingsFps=await run('settings.fps');
+    assert.equal(await run('loopFps()'),settingsFps,'in use: settings.fps');
+    await run(`setSetting('restSlow',false);document.hasFocus=()=>false;0`);
+    assert.equal(await run('loopFps()'),settingsFps,'"slow down when you\'re elsewhere" off: always settings.fps');
+    await run(`setSetting('restSlow',true);0`);
+    win.hide(); await pause(500);
+    assert.equal(await run('looping'),false,'hidden: the loop stops');
+    win.show(); await pause(500);
+    assert.equal(await run('looping'),true,'shown again: it runs');
+    assert.equal(await run(`document.getAnimations().filter(a=>a.effect&&a.effect.target&&a.effect.target.closest&&a.effect.target.closest('.art')).length`),0,'no CSS animation on the covers');
+    await run(`(()=>{const d=document.createElement('div');d.className='art';d.id='spin-probe';d.innerHTML='<svg viewBox="0 0 10 10"><rect class="sp" width="4" height="4"/></svg>';document.body.appendChild(d);document.body.classList.add('is-playing');})();0`);
+    await pause(600);
+    const turned=await run(`document.querySelector('#spin-probe .sp').style.transform`);
+    assert.match(turned,/^rotate\([\d.]+deg\)$/,'music playing: the loop turns the shapes ('+turned+')');
+    await run(`document.body.classList.remove('is-playing');0`); await pause(300);
+    const held=await run(`document.querySelector('#spin-probe .sp').style.transform`); await pause(400);
+    assert.equal(await run(`document.querySelector('#spin-probe .sp').style.transform`),held,'paused: they hold still');
+    await run(`document.getElementById('spin-probe').remove();delete document.hasFocus;reflectPlayState();0`);
+
     // persistence across a reload
     await run(`pomPause();setSetting('theme','orchid');setSetting('timerStyle','mosaic');setSetting('vizStyle','burst');setSetting('vizSens',1.6);0`);
     win.reload(); await new Promise(r=>win.webContents.once('did-finish-load',r)); await pause(900);
