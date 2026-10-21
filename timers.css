@@ -1,0 +1,203 @@
+/* FLOW · timers — each one looks like the pill: a dark capsule, its name on a
+   tag in its own colour (--tc, with --tink for text on it), a bar, the time
+   left and three buttons (edit, pause, reset). An ended one takes its colour
+   over the whole capsule and breathes until it is dismissed. Shared by FLOW's
+   window (flow.css has the colours), the pop-out (html.tm-page: FLOW's theme
+   arrives from main) and the pill's panel. The dock's slot picks the layout:
+   a card with a head, a row (full screen), compact rows (mini), a stack (the
+   pop-out). The new-timer field stays out of sight until the timers are
+   pointed at: in a card or a row it is a "+" that opens into the field, in
+   the pop-out it fades in at the end away from the screen edge. */
+html.tm-page{--bg:#060607;--fg:#F2EDE3;--fg2:#aeaaa3;--mu:#74716b;--s1:#111111;--s2:#181717;--s3:#201f1e;--bd:#191918;--bd2:#2a2928;
+  --c1:#FF4F2E;--c2:#FFC23D;--c3:#2F62FF;--c4:#F2EDE3;--c5:#14B8A0;--op:1;
+  --display:'Syne',sans-serif;--mono:'JetBrains Mono',Consolas,monospace;--ease:cubic-bezier(.2,.8,.2,1)}
+
+.tm-dock{--rh:34px;--tbounce:cubic-bezier(.34,1.32,.64,1);position:relative;min-width:0;display:flex;flex-direction:column}
+:where(.tm-dock) button{background:none;border:0;cursor:pointer;font:inherit;color:inherit}
+.tm-head{display:none}
+.tm-list{display:flex;flex-direction:column;gap:6px}
+.tm-list:empty{display:none}
+.tm-list:not(:empty)+.tm-new{margin-top:6px}
+
+/* ══ a timer ══ */
+.tm-row{position:relative;height:var(--rh);min-width:0;flex-shrink:0;border-radius:999px;background:var(--s1);border:1px solid var(--bd2);
+  display:flex;align-items:center;gap:8px;padding:0 4px 0 6px;color:var(--fg);transition:border-color .25s,background .25s}
+.tm-tag{flex:0 1 auto;min-width:0;max-width:50%;height:22px;padding:0 10px;border-radius:999px;background:var(--tc);color:var(--tink);
+  font:700 11.5px/22px var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .25s,color .25s}
+.tm-bar{flex:1;min-width:24px;height:6px;border-radius:6px;background:var(--s3);overflow:hidden}
+.tm-bar b{display:block;height:100%;width:0;background:var(--tc);border-radius:6px;transition:width .25s linear}
+.tm-left{flex-shrink:0;min-width:38px;text-align:right;font:700 12.5px/1 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.no-left .tm-row:not(.done) .tm-left{display:none}
+.tm-btns{display:flex;gap:1px;flex-shrink:0}
+.tm-ib{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:var(--fg2);flex-shrink:0}
+.tm-dock .tm-ib:hover{background:var(--s3);color:var(--fg)}
+.tm-ib svg{width:14px;height:14px;display:block}
+.tm-row.paused .tm-tag{background:var(--s3);color:var(--fg2)}
+.tm-row.paused .tm-bar b{background:var(--mu)}
+.tm-row.paused .tm-left{color:var(--mu)}
+/* ended: the capsule takes the colour, and a ring keeps leaving it until it is dismissed */
+.tm-row.done{background:var(--tc);border-color:var(--tc);color:var(--tink);animation:tm-breathe 1.7s ease-out infinite}
+.tm-row.done .tm-tag{background:var(--tink);color:var(--tc)}
+.tm-row.done .tm-bar{background:color-mix(in srgb,var(--tink) 22%,transparent)}
+.tm-row.done .tm-bar b{background:var(--tink)}
+.tm-row.done .tm-left{font-weight:800;letter-spacing:.04em}
+.tm-row.done .tm-ib{color:var(--tink)}
+.tm-dock .tm-row.done .tm-ib:hover{background:color-mix(in srgb,var(--tink) 18%,transparent);color:var(--tink)}
+@keyframes tm-breathe{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--tc) 70%,transparent)}70%,100%{box-shadow:0 0 0 7px color-mix(in srgb,var(--tc) 0%,transparent)}}
+
+/* reset? — asked in the row; nothing happens if it isn't answered */
+.tm-row.asking{gap:6px;padding:0 4px 0 13px;border-color:var(--tc)}
+.tm-ask{flex:1;min-width:0;font:500 11.5px/1 var(--mono);color:var(--fg2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tm-ask b{color:var(--fg);font-weight:700}
+.tm-yes,.tm-no{height:24px;padding:0 11px;border-radius:999px;flex-shrink:0;font:700 11px/1 var(--mono)}
+.tm-dock .tm-yes{background:var(--tc);color:var(--tink)}
+.tm-dock .tm-no{border:1px solid var(--bd2);color:var(--fg2)}
+.tm-dock .tm-no:hover{color:var(--fg);border-color:var(--fg2)}
+
+/* edit: name, time left, colour */
+.tm-row.editing{height:auto;border-radius:18px;flex-direction:column;align-items:stretch;gap:9px;padding:9px 10px 10px;border-color:var(--tc)}
+.tm-ed{display:flex;gap:6px}
+.tm-in{height:30px;border-radius:999px;background:var(--s2);border:1px solid var(--bd2);padding:0 12px;color:var(--fg);font:600 12px/1 var(--mono);
+  outline:none;min-width:0;user-select:text}
+.tm-in:focus{border-color:var(--fg2)}
+.tm-in::placeholder{color:var(--mu)}
+.tm-e-name{flex:1}
+.tm-e-left{width:96px;text-align:right}
+.tm-e-row{display:flex;align-items:center;gap:6px}
+.tm-grow{flex:1}
+.tm-btn{height:28px;padding:0 13px;border-radius:999px;font:700 11px/1 var(--mono);white-space:nowrap}
+.tm-dock .tm-btn{border:1px solid var(--bd2);color:var(--fg2)}
+.tm-dock .tm-btn:hover{color:var(--fg);border-color:var(--fg2)}
+.tm-dock .tm-btn.prime{background:var(--fg);border-color:var(--fg);color:var(--bg)}
+.tm-dock .tm-btn.bad:hover{color:#ff6b5b;border-color:#ff6b5b}
+.tm-sw{display:flex;flex-wrap:wrap;gap:6px;padding:1px 2px}
+.tm-s{width:18px;height:18px;border-radius:50%;background:var(--sc)!important;box-shadow:0 0 0 2px var(--s1);transition:transform .15s,box-shadow .15s}
+.tm-s:hover{transform:scale(1.15)}
+.tm-s.on{box-shadow:0 0 0 2px var(--s1),0 0 0 4px var(--sc)}
+.nope{animation:tm-nope .4s}
+@keyframes tm-nope{20%{transform:translateX(-4px)}40%{transform:translateX(4px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
+
+/* ══ a new timer ══ */
+.tm-new{position:relative;z-index:30;min-width:0;flex-shrink:0}
+.tm-add{position:relative;height:var(--rh);border-radius:999px;border:1px dashed var(--bd2);background:color-mix(in srgb,var(--s1) 55%,transparent);
+  display:flex;align-items:center;gap:7px;padding:0 4px 0 8px;overflow:hidden;transition:border-color .2s,background .2s,padding .3s}
+.tm-add:hover{border-color:var(--mu)}
+.tm-add:focus-within{border-style:solid;border-color:var(--fg2);background:var(--s1)}
+.tm-plus{display:none}
+.tm-dot{width:15px;height:15px;border-radius:50%;flex-shrink:0;background:var(--tc)!important;opacity:.55;transition:opacity .2s}
+.tm-add:focus-within .tm-dot,.tm-add:hover .tm-dot{opacity:1}
+.tm-add input{height:100%;min-width:0;padding:0;background:none;border:0;outline:none;color:var(--fg);font:600 12px/1 var(--mono);user-select:text}
+.tm-add input::placeholder{color:var(--mu)}
+.tm-name{flex:1}
+.tm-dur{width:58px;text-align:right;color:var(--fg2)}
+.tm-dur:placeholder-shown{width:40px}
+.tm-go{display:none!important}
+.tm-add:has(input:not(:placeholder-shown)) .tm-go{display:grid!important}
+.tm-drop{position:absolute;left:0;right:0;top:calc(100% + 6px);display:flex;flex-direction:column;gap:9px;padding:8px;
+  background:var(--s1);border:1px solid var(--bd2);border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.45)}
+.tm-drop[hidden]{display:none}
+.tm-sugs{display:flex;flex-direction:column;gap:2px}
+.tm-sug{display:flex;align-items:center;gap:9px;height:28px;padding:0 10px 0 8px;border-radius:10px;text-align:left;font:600 12px/1 var(--mono)}
+.tm-dock .tm-sug{color:var(--fg2)}
+.tm-sug i{width:10px;height:10px;border-radius:50%;flex-shrink:0;background:var(--sc)}
+.tm-sug span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tm-sug span b{color:var(--fg);font-weight:800}
+.tm-sug small{flex-shrink:0;font-size:10.5px;color:var(--mu)}
+.tm-dock .tm-sug:hover,.tm-dock .tm-sug.on{background:var(--s3);color:var(--fg)}
+.tm-chips{display:flex;flex-wrap:wrap;gap:5px}
+.tm-chip{height:24px;padding:0 10px;border-radius:999px;font:600 11px/1 var(--mono)}
+.tm-dock .tm-chip{background:var(--s2);color:var(--fg2)}
+.tm-dock .tm-chip:hover{background:var(--s3);color:var(--fg)}
+.tm-dock .tm-chip.on{background:var(--fg);color:var(--bg)}
+
+/* a "+" that opens into the field (a card's head, the full-screen row): pointing at the timers or
+   focusing the field opens it, with a small overshoot */
+:is(.slot-card,.slot-zen) .tm-new{width:var(--rh);transition:width .45s var(--tbounce)}
+:is(.slot-card,.slot-zen) .tm-add{padding-left:0;border-style:solid}
+:is(.slot-card,.slot-zen) .tm-add>:not(.tm-plus){opacity:0;transition:opacity .15s}
+:is(.slot-card,.slot-zen) .tm-plus{display:grid;place-items:center;position:absolute;inset:0;color:var(--fg2);pointer-events:none;transition:opacity .15s}
+.tm-plus svg{width:15px;height:15px}
+:is(.slot-card,.slot-zen):is(:hover,:focus-within) .tm-new{width:var(--open,100%)}
+:is(.slot-card,.slot-zen):is(:hover,:focus-within) .tm-add{padding-left:8px}
+:is(.slot-card,.slot-zen):is(:hover,:focus-within) .tm-add>:not(.tm-plus){opacity:1;transition-delay:.08s}
+:is(.slot-card,.slot-zen):is(:hover,:focus-within) .tm-plus{opacity:0}
+/* shut, what is inside takes no room (the inputs stay focusable: N, or a tab, opens it) */
+:is(.slot-card,.slot-zen) .tm-add>input{flex:0 0 0;width:0}
+:is(.slot-card,.slot-zen) .tm-add>button{display:none}
+.tm-dock:is(.slot-card,.slot-zen):not(:hover,:focus-within) .tm-add .tm-go{display:none!important}
+:is(.slot-card,.slot-zen):is(:hover,:focus-within) .tm-add>.tm-name{flex:1 1 0}
+:is(.slot-card,.slot-zen):is(:hover,:focus-within) .tm-add>.tm-dur{flex:0 0 58px}
+:is(.slot-card,.slot-zen):is(:hover,:focus-within) .tm-add>.tm-dur:placeholder-shown{flex-basis:40px}
+:is(.slot-card,.slot-zen):is(:hover,:focus-within) .tm-add>.tm-dot{display:block}
+:is(.slot-card,.slot-zen):is(:hover,:focus-within) .tm-add>.tm-popb{display:grid}
+
+/* ══ where they sit ══ */
+/* a card (FLOW's standard side column, under the minimal view): the head is its title; the "+"
+   sits at the head's right end and opens over it */
+.slot-card .tm-head{display:flex;align-items:center;gap:8px;height:var(--rh);padding:0 0 0 2px}
+.tm-eyebrow{font:500 10px/1 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--mu)}
+.tm-count{font:500 10px/1 var(--mono);color:var(--mu);background:var(--s2);border-radius:99px;padding:3px 7px}
+.tm-count:empty{display:none}
+.slot-card .tm-new{position:absolute;top:0;right:0}
+.slot-card .tm-add{background:var(--s1)}   /* opened, it covers the head */
+.slot-card .tm-list:not(:empty){margin-top:8px}
+.slot-card .tm-list:not(:empty)+.tm-new{margin-top:0}
+.slot-card .tm-row:not(.done){background:var(--s2)}
+.slot-std .tm-list{max-height:226px;overflow-y:auto;padding:6px;margin:2px -6px -6px}
+.slot-std .tm-list:not(:empty){margin-top:2px}
+.slot-min .tm-drop{top:auto;bottom:calc(100% + 6px)}
+/* under the mini bar: compact, no field */
+.slot-mini{--rh:28px}
+.slot-mini .tm-new{display:none}
+.slot-mini .tm-list{gap:5px}
+.slot-mini .tm-row{gap:8px;padding:0 3px 0 4px}
+.slot-mini .tm-tag{height:19px;line-height:19px;font-size:11px;padding:0 8px}
+.slot-mini .tm-ib{width:22px;height:22px}
+.slot-mini .tm-ib svg{width:12px;height:12px}
+.slot-mini .tm-left{font-size:12px}
+/* full screen: a row in its bottom bar, beside the track, frosted like its chips; the field opens upward */
+.slot-zen{--rh:38px;--open:300px;flex-direction:row;flex-wrap:wrap;align-items:flex-end;gap:8px}
+.slot-zen .tm-list{flex-direction:row;flex-wrap:wrap;gap:8px}
+.slot-zen .tm-list:not(:empty)+.tm-new{margin-top:0}
+.slot-zen .tm-row{width:300px}
+.slot-zen .tm-bar{min-width:30px}
+.slot-zen .tm-tag{max-width:150px}
+.slot-zen .tm-row:not(.done),.slot-zen .tm-add{background:color-mix(in srgb,var(--bg) 72%,transparent);backdrop-filter:blur(8px)}
+.slot-zen .tm-tag{height:24px;line-height:24px;font-size:12.5px}
+.slot-zen .tm-left{font-size:13.5px}
+.slot-zen .tm-drop{top:auto;bottom:calc(100% + 6px);min-width:280px}
+.slot-zen .tm-new{transition:width .45s var(--tbounce),opacity .4s}
+/* the pop-out: the field fades in while it is pointed at, at the end away from the screen edge it
+   grows from (so nothing moves); its drop pushes the window open instead of covering anything */
+.slot-pop{opacity:var(--op);transition:opacity .2s}
+.slot-pop:hover,.slot-pop:focus-within,.slot-pop:has(.done){opacity:1}
+.slot-pop .tm-new{opacity:0;pointer-events:none;transition:opacity .2s}
+.slot-pop:is(:hover,.tm-empty) .tm-new,.slot-pop .tm-new:focus-within{opacity:1;pointer-events:auto}
+.slot-pop.field-top .tm-new{order:-1;margin:0 0 6px}
+.slot-pop.field-top .tm-list:not(:empty)+.tm-new{margin-top:0}
+.slot-pop .tm-add{background:var(--s1)}   /* over the desktop: a capsule like the others, not a see-through outline */
+.slot-pop .tm-drop,.slot-panel .tm-drop{position:static;margin-top:6px;box-shadow:none}
+.slot-pop .tm-row:not(.editing){cursor:grab}
+.slot-pop.size-s .tm-tag{max-width:40%}
+
+body[data-motion=still] .tm-row.done,html.still .tm-row.done{animation:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--tc) 45%,transparent)}
+@media (prefers-reduced-motion:reduce){ .tm-row.done{animation:none} }
+
+/* a timer that dings every so often: a small bell by its name, and each ding a bubble over the row (2026-10-21) */
+.tm-row{position:relative}
+.tm-bell{display:grid;place-items:center;width:14px;height:14px;color:var(--tc);flex-shrink:0;opacity:.85}
+.tm-bell svg{width:12px;height:12px}
+.tm-bub{position:absolute;inset:0;z-index:3;display:flex;align-items:center;gap:7px;padding:0 10px;border-radius:inherit;background:var(--tc);color:var(--tink);
+  font:600 11.5px/1 var(--mono);white-space:nowrap;overflow:hidden;animation:tm-bub-in .42s cubic-bezier(.3,1.6,.5,1) both;pointer-events:none}
+.tm-bub svg{width:13px;height:13px;flex-shrink:0;animation:tm-bell 1s ease-in-out 2}
+.tm-bub b{font-weight:800;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tm-bub span{opacity:.8}
+.tm-bub.out{animation:tm-bub-out .3s ease-in both}
+.tm-row.dinged{animation:tm-jump .5s cubic-bezier(.3,1.6,.5,1)}
+@keyframes tm-bub-in{from{opacity:0;transform:translateY(8px) scale(.8)}}
+@keyframes tm-bub-out{to{opacity:0;transform:translateY(-6px) scale(.96)}}
+@keyframes tm-bell{20%{transform:rotate(16deg)}50%{transform:rotate(-14deg)}75%{transform:rotate(8deg)}}
+@keyframes tm-jump{30%{transform:translateY(-3px)}}
+.tm-e-every{flex:0 0 96px}
+/* an open drop keeps its field open, whatever the focus says (a window that lost the focus mid-typing, 2026-10-21) */
+:is(.slot-card,.slot-zen).adding .tm-new{width:var(--open,100%)}

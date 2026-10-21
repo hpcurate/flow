@@ -1,0 +1,65 @@
+/* FLOW · a timer ends — the pill's "!" blown up to the screen: a disc in the
+   timer's colour pops (overshoot, wobble), a ring wave leaves it, shapes in
+   FLOW's colours fly out across the screen, the name rises under it, and it
+   all shrinks away. With "keep it on screen" a banner drops in at the top
+   and stays until it is answered. --D is the disc (ring.js: a third of the
+   screen, or 150 px small); --tc / --tink the timer's colour and its ink. */
+:root{--bg:#060607;--fg:#F2EDE3;--fg2:#aeaaa3;--s1:#111111;--bd2:#2a2928;
+  --c1:#FF4F2E;--c2:#FFC23D;--c3:#2F62FF;--c4:#F2EDE3;--c5:#14B8A0;
+  --display:'Syne',sans-serif;--mono:'JetBrains Mono',Consolas,monospace;--ease:cubic-bezier(.2,.8,.2,1)}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent}
+body{color:var(--fg);font:400 13px/1.3 var(--mono);-webkit-font-smoothing:antialiased;user-select:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+
+.stage{position:fixed;inset:0;pointer-events:none}
+.pop{position:absolute;left:50%;top:46%;width:0;height:0}
+.disc{position:absolute;left:calc(var(--D)/-2);top:calc(var(--D)/-2);width:var(--D);height:var(--D);border-radius:50%;
+  background:var(--tc);color:var(--tink);display:grid;place-items:center;font:800 calc(var(--D)*.64)/1 var(--display);
+  box-shadow:0 calc(var(--D)*.08) calc(var(--D)*.3) rgba(0,0,0,.38);animation:bang 2.7s var(--ease) both}
+.disc span{display:block;margin-top:calc(var(--D)*-.03)}
+@keyframes bang{0%{transform:scale(0) rotate(-35deg)}8%{transform:scale(1.3) rotate(10deg)}14%{transform:scale(.86) rotate(-6deg)}
+  20%{transform:scale(1.06) rotate(2deg)}26%{transform:scale(1) rotate(0)}30%{transform:scale(1) rotate(0)}34%{transform:scale(1.04) rotate(-3deg)}
+  38%{transform:scale(1) rotate(0)}82%{transform:scale(1);opacity:1}100%{transform:scale(.3);opacity:0}}
+.wave{position:absolute;left:calc(var(--D)/-2);top:calc(var(--D)/-2);width:var(--D);height:var(--D);border-radius:50%;
+  border:calc(var(--D)*.035) solid var(--tc);animation:wave 1.15s .06s var(--ease) both}
+.wave.w2{border-width:calc(var(--D)*.015);border-color:var(--fg);animation-delay:.2s;animation-duration:1.4s}
+@keyframes wave{0%{transform:scale(.5);opacity:.95}100%{transform:scale(2.7);opacity:0}}
+.sh{position:absolute;left:0;top:0;width:var(--s);height:var(--s);background:var(--k);animation:fly 1.7s var(--dl,.1s) var(--ease) both}
+.sh.o{border-radius:50%}
+.sh.r{border-radius:2px}
+.sh.t{background:none;width:0;height:0;border-left:calc(var(--s)/2) solid transparent;border-right:calc(var(--s)/2) solid transparent;border-bottom:calc(var(--s)*.9) solid var(--k)}
+.sh.b{height:calc(var(--s)*.38);border-radius:calc(var(--s)*.2)}
+.sh.ring{background:none;border-radius:50%;border:calc(var(--s)*.22) solid var(--k)}
+@keyframes fly{0%{transform:translate(-50%,-50%) scale(.2) rotate(0);opacity:0}10%{opacity:1}72%{opacity:1}
+  100%{transform:translate(calc(-50% + var(--tx)),calc(-50% + var(--ty))) scale(1) rotate(var(--r));opacity:0}}
+.tag{position:absolute;left:0;top:calc(var(--D)*.62);transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:calc(var(--D)*.035);
+  padding:calc(var(--D)*.05) calc(var(--D)*.12) calc(var(--D)*.055);border-radius:calc(var(--D)*.2);background:var(--s1);border:1px solid var(--bd2);
+  box-shadow:0 calc(var(--D)*.06) calc(var(--D)*.24) rgba(0,0,0,.38);white-space:nowrap;animation:rise 2.7s var(--ease) both}
+.tag b{font:800 calc(var(--D)*.13)/1 var(--mono);max-width:80vw;overflow:hidden;text-overflow:ellipsis}
+.tag span{font:700 calc(max(11px,var(--D)*.045))/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--tc)}
+@keyframes rise{0%,9%{opacity:0;transform:translate(-50%,24%) scale(.9)}20%{opacity:1;transform:translate(-50%,0) scale(1.03)}
+  26%{transform:translate(-50%,0) scale(1)}82%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-20%) scale(.9)}}
+
+/* kept on screen: a banner per timer at the top, answered with ok, +5 min or again */
+.cards{position:fixed;top:20px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px}
+.card{display:flex;align-items:center;gap:12px;height:54px;padding:0 8px 0 9px;border-radius:999px;background:var(--tc);color:var(--tink);
+  box-shadow:0 16px 48px rgba(0,0,0,.42);animation:drop .6s var(--ease) both,glow 1.8s .6s ease-out infinite}
+.card i{flex-shrink:0;width:38px;height:38px;border-radius:50%;background:var(--tink);color:var(--tc);display:grid;place-items:center;font:800 25px/1 var(--display);font-style:normal}
+.card .txt{display:flex;flex-direction:column;gap:5px;min-width:0;padding-right:6px}
+.card b{font:700 16px/1 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40vw}
+.card small{font:700 10.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;opacity:.72}
+.card button{height:36px;padding:0 15px;border-radius:999px;border:1.5px solid color-mix(in srgb,var(--tink) 38%,transparent);font:700 12px/1 var(--mono);white-space:nowrap;flex-shrink:0}
+.card button:hover{border-color:var(--tink)}
+.card button.ok{background:var(--tink);color:var(--tc);border-color:var(--tink)}
+.card.go{animation:lift .32s ease-in both}
+@keyframes drop{0%{transform:translateY(-140%) scale(.7);opacity:0}55%{transform:translateY(10%) scale(1.04);opacity:1}75%{transform:translateY(-3%)}100%{transform:none;opacity:1}}
+@keyframes glow{0%{box-shadow:0 16px 48px rgba(0,0,0,.42),0 0 0 0 color-mix(in srgb,var(--tc) 70%,transparent)}
+  70%,100%{box-shadow:0 16px 48px rgba(0,0,0,.42),0 0 0 12px color-mix(in srgb,var(--tc) 0%,transparent)}}
+@keyframes lift{to{transform:translateY(-130%) scale(.85);opacity:0}}
+
+/* FLOW's motion setting: calm drops the wobble, still shows it all without moving */
+html.calm .disc{animation-name:bang-calm}
+@keyframes bang-calm{0%{transform:scale(.6);opacity:0}12%{transform:scale(1);opacity:1}82%{transform:scale(1);opacity:1}100%{transform:scale(.6);opacity:0}}
+html.still .stage *,html.still .card{animation:none!important}
+html.still .sh,html.still .wave{display:none}

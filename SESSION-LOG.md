@@ -468,6 +468,372 @@ relaxed. Re-check it another time before trusting a failure there.
 
 ---
 
+## 2026-10-19 — the pill (a session bar on top of everything)
+
+Hugo's idea: a visualiser for FLOW that works with GRIND and TUTOR, can run an open
+session of its own (named), can be placed freely and snapped to the taskbar, with
+sizes and the same design as GRIND's and TUTOR's session pill. He asked for it
+**inside FLOW** (not a Windhawk mod, not a separate app), as a **toggle that runs
+alongside the views** and survives closing the main window. His answers on the
+details:
+
+- **Open session = GRIND's model:** a goal, a break every X min for Y min.
+- **Another app taking the clock** pops a quick **"!"**, which pops and fades as a "cool
+  animation". From the pill, starting or handing a session to TUTOR or GRIND *opens* that
+  app. A session started inside an app without the link doesn't show, and that's fine.
+- **The music is part of it:** a 4-bar visualiser.
+- **All nine extras I proposed:** the app's colours, controls on hover, idle states,
+  lock and click-through, hide in full screen, break moments, the music bars with the
+  track on hover, global shortcuts, and a tally by name. Plus a settings tab.
+
+**Tested first:** a throwaway Electron pill on the real taskbar plus a probe. Clicking
+the taskbar never covers a topmost window, but **closing the Start menu puts the taskbar
+back over it**. A guard fixes that: every 120 ms it walks the z-order up from the pill,
+and if a taskbar is above, `SetWindowPos(HWND_TOPMOST)` lifts the pill back. It runs
+from a PowerShell/C# helper. Gotcha: a synchronous `execFileSync` probe froze Electron's
+main thread, and `SetWindowPos` from another process waits for that thread (it's a
+SendMessage), which looked like the guard failing.
+
+**How it's built**
+- `pill-main.js` (main process) owns the pill window, the open session, the snapping,
+  the settings (`userData/pill.json`: cfg, pos, open, done), the right-click menu,
+  global shortcuts and `pill.ps1`. `main.js` wires it into the link (hello, session,
+  drop, ready, cmd) and rebuilds the tray menu from `pill.trayItems()`.
+- **The open session lives in main** (Node timers aren't throttled while FLOW is hidden).
+  It is mirrored into FLOW's window **as a link**: `link:msg` `{t:'state', kind:'open',
+  name}` plus session messages. So FLOW's timer, music sync and chime follow it without
+  new code there. The page labels it with the name, the focus line under the clock *is*
+  the name (renaming is two-way), reset ends it, and the chip opens the pill's panel.
+- **Priority:** a linked app, then the open session, then FLOW's own pomodoro (running or
+  paused mid-phase), then idle.
+- **A link arriving** while an open session runs pauses it underneath and pops "!". So does
+  a takeover from another app, or FLOW's pomodoro running. When the app lets go, the open
+  session takes the clock back (`linkDropped()` mirrors it instead of `state off`).
+- **Hand-over:** the pill starts `TUTOR.exe` or `GRIND.exe` with `--flow-link` and
+  `--flow-carry=<start>:<focus s>:<since break s>`, then waits. When the app's first
+  session report shows those minutes (focus ≥ carried − 30 s), the open session is dropped
+  without being filed; otherwise it stays underneath and "!" pops. FLOW ignores the app's
+  `show` while it waits, so only the app's window comes up. The TUTOR and GRIND side is in
+  their manifests (hello `k` colours, session `every`, `fromFlow(argv)` at launch and in
+  `second-instance`, `session.start` takes `carry`).
+- **`pill.ps1`** is Windows PowerShell 5.1 plus Add-Type C# (copied to userData like
+  `smtc.ps1`). It reports the taskbar rects, a full-screen foreground window (covers its
+  monitor and isn't maximised), the snap spots, and Ctrl while click-through is on; it
+  also runs the guard. The spots come from UI Automation over `Shell_TrayWnd`'s buttons:
+  the biggest run of non-tray buttons is the icon group, and the tray starts at the
+  leftmost `SystemTray.*` button. That takes about 0.5 s the first time and is
+  re-read every 5 s while the pill sits beside the icons.
+- **The window** is the pill plus a 12 px transparent margin (room for the moments), and
+  grows by the panel above or below. It's frameless, transparent, `skipTaskbar`,
+  `focusable:false` (focusable only while the panel is open, so it can type), and
+  topmost at the `screen-saver` level. Clicks pass through everywhere except the pill:
+  `setIgnoreMouseEvents(true,{forward:true})`, and the page reports hits. Scale is CSS
+  `zoom`, not `setZoomFactor`, which is per origin and would zoom FLOW's window too
+  (both are `file://`).
+- **The music bars:** the page samples four bands of the analyser about 30 times a second
+  while the pill shows them. That's why FLOW's window has `backgroundThrottling:false`
+  now; `frame()` stops drawing on its own while hidden (`win:vis`).
+- **The design** is GRIND's `.sess` pill: `s1` background, `bd2` border, dot plus
+  phase, time / goal, a 6 px goal bar over a 3 px next-break bar, break-in. Sizes are
+  S 232×28, M 660×32 and L 680×44 (two lines, Syne name, track on the right); idle is
+  compact or a dot. The moments are the "!" disc with six flying shapes and a shake, and
+  the colour wipe for break / back to it / goal.
+
+**Verified**
+- `npm run test:ui` passes. New checks: on, snapped and idle; hidden window keeps it;
+  open session from the panel mirrored with the name; rename from FLOW; three sizes;
+  FLOW's and the pill's buttons; break moment; TUTOR takeover ("!", paused underneath,
+  TUTOR's colours, panel); TUTOR bye brings the open session back; hand-over to GRIND
+  (launch recorded: exe, `--flow-link`, carry; adopted with no "!"; GRIND's colours);
+  tally and name chips; free drag and snap into the icon spot; full-screen hide; lock;
+  click-through + Ctrl; music bars; Settings → Pill; off; `pill.json`.
+  Shots: `shot-13-pill-*.png`.
+- **End to end** with the packed GRIND and TUTOR (throwaway profiles, a private pipe, a dev
+  FLOW with other apps off):
+  - GRIND not running: an open session of 25 min was handed over, GRIND took the start
+    and the minutes and filed 25 min when it was ended from the pill.
+  - TUTOR already running: linked through its second instance, in its theme colours.
+- GRIND 18/18 and TUTOR 18/18 GUI checks, plus the new unit checks. All three apps packed.
+
+## 2026-10-19 (evening) — timers made on the fly (1.2.0)
+
+Hugo's ask: timers that aren't the Pomodoro, made on the fly ("remind me the laundry is
+done in 2h"), with a simple interface:
+1. a toggle on/off for the timers;
+2. when they're on, a second toggle pops them out into their own mini window (name,
+   progress bar, three buttons: edit, pause, reset with confirmation);
+3. that window looks like the pill;
+4. not popped out, they show in every view of FLOW, and the minimal view is the pop-out
+   and the minimal window merged together;
+5. the timers needn't be saved, but the names are remembered and offered as you type;
+6. one that ends gets a big poppy overlay, like the pill's "!";
+7. timers have colours, and the colour comes back with the name;
+8. customisation options.
+
+**Calls I made** (none were asked):
+- **In the standard view** they're a strip of capsules under the titlebar. It's three across
+  at the default size, with the field last.
+- **The field** takes "laundry 2h" on its own, or a name and a length in its own box. A name
+  that was used before, typed in full ("Episode 3"), wins over splitting off a number. A
+  picked name brings its length and colour.
+- **Reset** keeps a running timer running from its full length, restarts an ended one, and
+  leaves a paused one paused. It asks in the row, and nothing happens if the question isn't
+  answered within 5 s.
+- **Ended:** the middle button becomes ✓ (dismiss). Edit can give an ended timer more time.
+  Editing the time left keeps the time already spent on the bar.
+- **Turned off,** the timers are hidden but keep running and still ring, so a hidden laundry
+  timer isn't lost.
+- **The overlay** pops on the screen the mouse is on. The overlay is followed by a Windows
+  notification, which waits if he was away. A pulsing row stays until dismissed.
+  "Keep it on screen" (off by default) leaves a banner at the top: ok / +5 min / again.
+
+**How it's built**
+- `timers-main.js` (main) keeps the timers (end times, not ticks), the settings, the names
+  (`userData/timers.json`: cfg, the pop-out's place, names with colour and length; never
+  the timers), the pop-out window and the overlay window, the notification and the
+  shortcut. Every change goes out as one state message to FLOW's window, the pop-out and
+  the overlay; the pages count down from the end time between them.
+- `timers-ui.js` is the list and the field. It's the same code in FLOW's window and the
+  pop-out, and `timers.css` styles both. A row is rebuilt only when its shape changes, so
+  buttons stay under the pointer.
+- **In FLOW's window** it's one dock that `app.js` moves into the slot of the view on screen:
+  `tm-slot-std`, `-min`, `-mini`, `-zen`, or `-park` while hidden or popped out.
+- **The minimal view grows by the dock.** The page reports the dock's height (`win:dock`).
+  `main.js` keeps `dock.want` (what the page said) and `dock.on` (what the window has), so
+  the saved minimal size is always the window's own (height − `dock.on`). The minimum height
+  grows with it, and full screen restores it. The mini bar adds the dock to its height.
+- **The pop-out** (`timers.html` + `timers-pop.js`) is transparent and lets clicks through
+  except on a capsule, like the pill. Its page reports its height; main grows it away from
+  the nearer screen edge (from its bottom in the lower half). A capsule drags it. Alt+F4
+  puts the timers back into FLOW.
+- **The overlay** (`ring.html/css/js`) is a transparent, non-focusable window over the
+  whole screen:
+  - a disc in the timer's colour pops (overshoot and wobble), with two ring waves;
+  - shapes in FLOW's palette fly out across the screen, and the name rises underneath;
+  - pops queue one after another;
+  - it closes itself when nothing is left;
+  - FLOW's Calm and Still motion settings tone it down.
+- **The sound** plays in FLOW's window (`backgroundThrottling:false` already keeps it alive):
+  a three-note triangle bell, unlike the phase chime. "Ring" repeats it every 2.4 s for at
+  most a minute, and stops when the timer stops being ended.
+- **Gotchas:**
+  - Two of the shared classes collided with FLOW's stylesheet. The edit form's `main`
+    button picked up `.main`'s grid, and the dock's `empty` picked up the library's empty
+    state. They're now `prime` and `tm-empty`.
+  - `:where(.tm-dock) button` keeps the pop-out's button reset from beating the row styles.
+
+**Verified:** `npm run test:ui` passes. The new section checks:
+- N turns them on with the field focused;
+- "Laundry 2h" + Enter; a name, a length and a picked colour;
+- autocomplete brings back length and colour (↓, Enter, Enter);
+- pause and resume;
+- reset asks: keep leaves it, reset restores the full length;
+- edit (name, time left, colour);
+- standard fit;
+- minimal is 660 + dock tall, grows with one more timer, keeps 660 on disk, and its drop
+  opens upward;
+- mini is base + dock; full screen;
+- pop-out: FLOW's dock parked, the same rows, as tall as its page, a new timer from it grows
+  upward, dragged to the top half it anchors by its top;
+- an ending timer opens the overlay, notifies (stubbed), rings FLOW, and the pop-out row
+  shows it ended;
+- the overlay closes itself; dismiss from the row;
+- banner + ring: the banner stays, the bell repeats, ok dismisses and silences, the overlay
+  goes; +5 min from the banner;
+- back in; Settings → Timers (bar, order, names, forget one);
+- off: hidden, not stopped; `timers.json` has the names and no timers.
+
+Shots: `shot-14-timers-*.png`. Also fixed: the pill's lock check now compares its saved
+place. Beside the taskbar icons it follows them, and the icon group moved 5 px mid-run.
+
+## 2026-10-19 (night) — timers in the layouts, beside the pill; an icon titlebar
+
+Hugo's seven points after trying the timers:
+1. **Timers grow from the right of the pill** when snapped to it.
+2. **No dead space** for the pill's controls: it grows to make room for them on hover.
+3. **The new-timer field** only appears on hover, in the pop-out and in the app.
+4. **Timers are part of each view's layout**, not laid on top of it (full screen and the others).
+5. **The track title:** smaller, in bold JetBrains Mono.
+6. **The timers' names:** the same.
+7. **The titlebar:** icons only, a name sliding out of the button pointed at, bouncy but discreet,
+   the bar growing both ways. The link chip shows its logo and opens on its name on hover.
+
+**How**
+- **The pill is the head of a group** (pill-main.js / pill.js):
+  - The window spans the group (the pill plus docked timers) and `GROW` (190 px) of room on
+    its free side; clicks pass through everywhere but the pill, the capsules, the "+" and the
+    panel.
+  - The free side is away from the snap spot's anchor edge (`r` → grows left), or away from
+    a nearby screen edge.
+  - The pill's rest width is the size's; on hover its CSS width animates by the controls'
+    width (`--ctlw`) with a small overshoot, and the controls come in on the growing side.
+  - The page reports the docked capsules' width at rest (`tdock`, converted to layout
+    pixels by the pill's own measured width), and main places the group by it: at an
+    `r` spot the group's right end stays at the icons and the pill moves left.
+  - A group wider than the room there stops at the screen's edge.
+- **Docking** (timers-main.js):
+  - A `dock` setting; the pop-out is popped and docked while the pill is on, so it has no
+    window of its own.
+  - Dragging the pop-out within 70 px of the group's right end lights the pill
+    (`dockHint`), and dropping it docks.
+  - Pulling a capsule more than 36 px away undocks: the pop-out reopens at the drop point,
+    anchored to the nearer screen half.
+  - The pill's right-click menu and Settings → Timers both toggle it.
+  - main.js passes each module a getter for the other. The pill's `onChange` calls
+    `timers.pillChanged()`, which pushes only when docking changes, so there is no loop.
+- **The docked capsules:**
+  - Tag, time and a small bar, opening on edit / pause / reset; reset asks in the capsule.
+  - The "+" and edit open the pill's panel in a new `timers` mode: timers-ui.js in a
+    `slot-panel`, its height reported to main.
+- **The layouts:**
+  - Standard: the dock is a card (`.slot-card`, with a head: TIMERS + count) at the bottom of
+    `.side`; the cover may shrink to 60 px.
+  - Minimal: the same card under the stage.
+  - Full screen: a row of 300 px capsules in `.zen-bottom` after the track. "Show the track"
+    off and the cursor fade now hide only the track and the controls, so the timers stay.
+  - Auto-width rows squeezed the tags in that nested flex layout, so the row width is fixed.
+- **The field:**
+  - In cards and the full-screen row it is a "+" whose width opens on hover or focus (the
+    inputs collapse to 0 and its buttons are `display:none` while shut; the GUI check's fit
+    test caught them past the window's edge).
+  - In the pop-out it fades in (opacity, still focusable) at the end away from its anchor
+    (`field-top` when anchored at the bottom), with its space kept, so nothing moves.
+- **Titlebar:** labels `width:0` → `var(--lw)` (app.js measures each one, again on
+  `pointerenter` for the link chip) with `--bounce` (`cubic-bezier(.34,1.3,.64,1)`); the
+  980/1100 px label media query is gone.
+- **Fonts:** `.np-title`, `.mini-title`, `.zen-track`, the pill's L song, the timer tags,
+  the docked capsules and the overlay's names are JetBrains Mono 700/800.
+- **Gotcha:** a `font:` shorthand after `line-height` reset it (docked tags sat high).
+
+**Verified:** `npm run test:ui` passes. New checks:
+- the link chip at rest and on hover;
+- the timers card sits in `.side`;
+- titlebar labels at rest and on hover (only the one pointed at);
+- the card's "+" is under 40 px at rest and over 200 px on hover;
+- the fonts;
+- the pill grows by 130–150 px on hover;
+- dropping the pop-out on the pill: hint, dock, a capsule per timer, its width known, the
+  group width, the right end held (or stopped at the screen's edge);
+- capsule pause and reset-asks, and opening on hover with the "+";
+- the timers panel; undock;
+- the pop-out's field at opacity 0 at rest and 1 on hover.
+
+Hover is driven with `webContents.sendInputEvent` mouse moves. The live-audio check once read
+0.019 against a 0.02 threshold during a quiet moment of the video playing in Brave; it passed
+on re-run.
+
+## 2026-10-20 — the link, readable by CORE
+
+**Why:** CORE (`github/core`, Hugo's new launch center) draws a chain between FLOW's tile and
+TUTOR's or GRIND's while they are linked. CORE must **not** connect to the pipe: it takes one
+app at a time, so a second client would kick the linked app off.
+
+**What:** main.js writes `userData/link.json` = `{ linked: "TUTOR" | "GRIND" | null, since, pid }`.
+- It is written when a hello names the app, and on every drop (bye, unlink, the takeover's
+  old socket).
+- It is cleared when the pipe starts (so a crash that left it saying "linked" is undone) and on
+  quit.
+- CORE polls the file. It also treats a "linked" file as unlinked while FLOW isn't running.
+
+**Verified:** `npm run test:ui` passes. New checks: the file names TUTOR after its hello, clears
+on bye, and names GRIND after the takeover. Packed (`grep LINK_STATUS` finds it in the asar).
+The first pack attempt failed with EBUSY while FLOW was running; the build left in place was
+intact.
+
+## 2026-10-20 (evening) — other apps, one click; names in mono
+
+**Hugo's asks:**
+- A quick toggle on the player for showing what other apps play. Sometimes he doesn't want
+  his YouTube in FLOW.
+- Timer and focus names in JetBrains Mono bold, not Syne.
+
+**What changed:**
+- **The "other apps" chip.** It sits in the top-right corner of the player's cover
+  (`.np-sys`, `data-toggle="sysMedia"`). It is the same switch as Settings → Other apps,
+  wired by the generic `[data-toggle]` binding.
+  - On: a lit dot in the focus colour.
+  - Off: grey and struck through. FLOW goes back to its own library and visualiser, and the
+    bridge stops.
+- **Pill names in mono.** The pill's named open session (`.tag.named`) and the large pill's
+  name (`.sz-l .nm`) are JetBrains Mono 800, no longer Syne. Timer rows, docked capsules and
+  the "time's up" banners were already mono. Syne stays for the clock, the wordmark, the "!"
+  glyphs and the palette names.
+
+**Verified:** `npm run test:ui` passes. New checks: the chip shows on; one click turns
+`sysMedia` off and the chip follows. Packed (`np-sys` is in the asar).
+
+## 2026-10-21 — the pill's "+" and its panel
+
+Two points of Hugo's nine-point list (the other seven were CORE's, see `core/CORE.md` 0.3.0).
+
+**Hugo's asks:**
+- "Make the + button to add a timer less swift: the space between the pill and the + actually
+  hides the +."
+- "Make the focus menu in the pill a smoother transition, snappy and poppy."
+
+**What was wrong with the "+":** the page only keeps the pill's window clickable over the pill,
+a capsule, the panel or the "+" (`setHit`). The 6 px gap between them is the `.group` itself, so
+crossing it switched the window to click-through. On Windows that drops the hover state, so
+`.group:hover` ended and the "+" folded away (a 0.42 s bounce) before the pointer reached it.
+
+**What changed:**
+- **The gap counts.** `.group` is part of the hit area (`pill.js`).
+- **The "+" is calmer.** It comes in over 0.6 s (opacity slightly behind), and once the pointer
+  leaves it waits 0.5 s before folding away. Its plus turns a quarter on hover and dips on click.
+- **The panel pops** (the session panel, the start panel, the timers): it springs out of the
+  pill's side (`--pop`, a small overshoot, from above or below as it opens) and its rows follow
+  one after the other. Closing, main sends `pill:panel` `out`, the panel shrinks away in 0.15 s,
+  then the window is made small again (`setPanel`).
+- **The hover controls pop in** one after another (from the content outwards, whichever way the
+  pill grows).
+- Motion "still" turns all of it off.
+
+**Verified:** `npm run test:ui` passes. New checks: over the gap the window still takes clicks
+(`_test.ignoring`) and the "+" stays; off the group it waits, then folds; the panel's animation
+is `panel-in…`, closing plays `out` first, then it is hidden. Packed (`panel-in-up` in the asar).
+
+## 2026-10-21 (evening) — the pill's own sizes, timers that ding, a timer from CORE (1.3.0)
+
+From Hugo's `curate/claude_requests_final.md` ("the final list of fixes before I use the new
+box"): one FLOW point, and two of CORE's ten land here (see `core/CORE.md` 0.5.0).
+
+**Hugo's asks:**
+- "actual control of the pill width/height in all 3 sizes, elements dynamically positioning"
+- (CORE) after a Claude request launch, a "how long?" window with presets → **a FLOW timer**
+- (CORE) a ding / notification above the visible timer every x seconds / minutes / hours
+
+**What changed:**
+- **Each pill size has its own width and height** (Settings → Pill → Width and height: two
+  sliders per size, the current size highlighted, reset per size). `pill-main.js`: `dims` in the
+  config, bounds in `DIMS` (S 120–480 × 20–64, M 300–1100 × 22–64, L 320–1200 × 28–80), the
+  defaults being the old `SIZES`. The idle pill is never wider than its size.
+- **The parts follow.** `pill.css`: the time, buttons, tag, bars, visualiser, mark and start
+  button size from `--h` (clamped; at the default sizes they give the old pixels back).
+  `pill.js` `fitParts()`: as a size gets narrower its least important parts give way, in order
+  (M: "break in…" → the phase word → the tag → the visualiser → the bars; L: the song → the
+  name → bars → visualiser; S: visualiser → bars). Read off the width at rest, so the hover
+  growth never reshuffles them. A large pill too low for two lines goes to one (`l-flat`).
+- **Timers ding every so often** (`timers-main.js`): a timer's `every` (≥ 10 s, below its
+  length) and `nextDing`; a 1 s loop dings it, but not in its last 1.5 s (the end rings anyway).
+  A ding is a soft note (unless the sound is off), a bubble over the timer's row with the time
+  left (`tmUI.ding`), and a note on the pill when docked. A bell marks the timers that ding.
+  The edit form has "every"; Settings → Timers → "Ding every" is the default for new ones
+  (empty = never).
+- **A timer from the command line**: `--flow-timer=15m --flow-timer-name=… --flow-timer-every=…`,
+  read at start and from a second instance (`main.js` → `timers.fromArgs`). It turns the timers
+  on if they were off. CORE's "how long?" uses it.
+- Small: the new-timer drop closes when the window loses focus (it stayed open over a collapsed
+  field when FLOW wasn't focused), and a row's buttons close it too.
+
+**Verified:** `npm run test:ui` passes. New checks: `--flow-timer` adds a 15-min timer dinging
+every 10 s; no timer for other arguments; `everyOf` / `parseDur`; one ding at the due time with
+the right text, the next one scheduled, the bubble and the bell on screen
+(`shot-15-timers-ding`); "every" from the edit form; the default for new timers; the pill at
+M 400×40 drops "break in…", the phase word and the tag and its time grows, at 800×26 shows everything
+(`shot-15-pill-m-*`); six sliders in settings, a slider sets it, reset
+(`shot-15-settings-pill-dims`). Packed (`fromArgs`, `fitParts`, `buildPillDims` in the asar).
+Not tried: a real launch from the packed CORE into the packed FLOW.
+
 ## Open follow-ups
 - The visualiser was tuned on a generated loop. Real tracks may want a different default
   sensitivity (Settings → Visualiser → Sensitivity).
@@ -478,3 +844,13 @@ relaxed. Re-check it another time before trusting a failure there.
   Core Audio interop in the bridge. Shuffle/repeat are not mapped, though SMTC exposes them.
 - Loopback hears *everything* on the default output device (notifications, other tabs),
   not only the app shown. Chromium has no per-process loopback here.
+- Pill: only a horizontal taskbar is snapped to (a vertical one leaves it free). Spots
+  are read on the primary taskbar only; on a secondary one it snaps to the band and the
+  edges. Not yet seen: an auto-hiding taskbar, or a monitor at a scale other than 100%.
+- Pill: FLOW must be running for it. Starting FLOW with Windows straight to the tray (pill
+  only) was discussed but not built.
+- Timers beside the pill: a group wider than the room beside its snap spot stops at the
+  screen's edge and can cover taskbar icons (five timers + an M pill at the icons' left).
+- Timers: quitting FLOW ends them (Hugo: no need to save them). The overlay also pops over
+  full-screen apps (games, videos); the pill's full-screen detection could gate it. The real
+  Windows notification isn't exercised by the test (stubbed).

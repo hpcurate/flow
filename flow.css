@@ -10,7 +10,7 @@
   --mono:'JetBrains Mono',Consolas,monospace;
   --ui:var(--mono);
   --r-card:22px;--r-ctl:12px;--gap:12px;--pad:16px;
-  --ease:cubic-bezier(.2,.8,.2,1);
+  --ease:cubic-bezier(.2,.8,.2,1);--bounce:cubic-bezier(.34,1.3,.64,1);
 }
 body[data-phase=break]{--phase:var(--break);--on-phase:var(--on-break)}
 
@@ -87,21 +87,38 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.2)}
 .mark{width:24px;height:24px}
 .wordmark{font:800 18px/1 var(--display);letter-spacing:.04em}
 /* linked (TUTOR, GRIND): a phase-coloured chip by the wordmark, named for the app running the timer */
-.link-badge{display:none;height:24px;align-items:center;gap:6px;padding:0 10px 0 8px;border-radius:999px;
+.link-badge{display:none;height:24px;align-items:center;padding:0 5px;border-radius:999px;
   background:var(--phase);color:var(--on-phase);font:700 11px/1 var(--mono);letter-spacing:.08em;-webkit-app-region:no-drag;
-  transition:background .4s,color .4s}
+  transition:background .4s,color .4s,padding .42s var(--bounce)}
 .link-badge svg{width:14px;height:14px}
+.link-badge span{max-width:150px;text-overflow:ellipsis}
+.link-badge:is(:hover,:focus-visible){padding:0 10px 0 5px}
 body.linked .link-badge{display:flex}
 body.linked .link-badge:hover{filter:brightness(1.12)}
 body.linked #pom-reset,body.linked [data-ph]:not(.on){opacity:.4}
-body.mode-minimal .link-badge span{display:none}
-body.mode-minimal .link-badge{padding:0 6px}
+body.mode-minimal .link-badge span{max-width:110px}
 .modes{display:flex;gap:2px;padding:3px;background:var(--s1);border:1px solid var(--bd);border-radius:999px;-webkit-app-region:no-drag}
-.mode-btn{height:30px;display:flex;align-items:center;gap:7px;padding:0 13px 0 11px;border-radius:999px;
+.mode-btn{height:30px;display:flex;align-items:center;padding:0 9px;border-radius:999px;
   color:var(--mu);font-size:12px;font-weight:600;transition:background .2s,color .2s}
+/* icons at rest: a name slides out of its button while that button is pointed at (the bar is centred, so it
+   grows both ways), with a small overshoot; the link chip does the same. app.js measures each name (--lw) */
+.mode-btn span,.link-badge span{display:block;width:0;margin-left:0;opacity:0;overflow:hidden;white-space:nowrap;
+  transition:width .42s var(--bounce),margin-left .42s var(--bounce),opacity .18s}
+.mode-btn:is(:hover,:focus-visible) span{width:var(--lw);margin-left:7px;opacity:1}
+.link-badge:is(:hover,:focus-visible) span{width:var(--lw);margin-left:6px;opacity:1}
 .mode-btn svg{width:16px;height:16px}
 .mode-btn:hover{color:var(--fg)}
 .mode-btn.on{background:var(--s3);color:var(--fg)}
+/* the pill: a toggle that runs alongside the views, so it lights a dot instead of taking the slot */
+.modes-sep{width:1px;height:16px;background:var(--bd2);margin:0 4px;align-self:center}
+.tog{margin-left:6px;width:6px;height:6px;border-radius:50%;background:var(--bd2);flex-shrink:0;transition:background .2s}
+.pill-tog.on{color:var(--fg)}
+.pill-tog.on .tog,.pill-card.on .tog{background:var(--c5)}
+body.mode-minimal .pill-tog,body.mode-minimal .modes-sep,body.mode-minimal .tm-pop{display:none}   /* no room: O, N and the Window tab still toggle them */
+/* the timers' pop-out: a second toggle, there while the timers are on */
+.mode-btn[hidden]{display:none}
+.mode-btn.tm-pop{padding:0 9px}
+.tm-pop.on{background:var(--s3);color:var(--fg)}
 .win-ctl{justify-self:end;display:flex;align-items:center;gap:2px;-webkit-app-region:no-drag}
 .wb{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:var(--mu);transition:background .15s,color .15s}
 .wb svg{width:17px;height:17px}
@@ -190,8 +207,18 @@ body.mode-minimal .link-badge{padding:0 6px}
 .cover{flex:1;min-height:92px;border-radius:14px;container-type:size}
 /* the big cover keeps a sleeve square, centred on its poster, rather than cropping it */
 .cover .art-img{--side:min(100cqw - 36px,100cqh - 36px);width:var(--side);height:var(--side);margin:auto;border-radius:8px}
+/* the quick switch for other apps' media (Spotify, YouTube…), over the cover's corner */
+.np-sys{position:absolute;top:24px;right:24px;z-index:4;height:26px;padding:0 11px 0 9px;border-radius:999px;display:flex;align-items:center;gap:7px;
+  background:color-mix(in srgb,var(--s1) 88%,transparent);border:1px solid var(--bd2);color:var(--mu);font:700 10.5px/1 var(--mono);letter-spacing:.04em;
+  transition:color .2s,border-color .2s,transform .35s var(--bounce)}
+.np-sys i{width:8px;height:8px;border-radius:50%;border:1.5px solid currentColor;transition:background .2s,border-color .2s,transform .35s var(--bounce)}
+.np-sys:hover{color:var(--fg);transform:scale(1.05)}
+.np-sys:active{transform:scale(.92)}
+.np-sys.on{color:var(--fg);border-color:color-mix(in srgb,var(--focus) 55%,var(--bd2))}
+.np-sys.on i{background:var(--focus);border-color:var(--focus);transform:scale(1.15)}
+.np-sys:not(.on) span{text-decoration:line-through;text-decoration-thickness:1.5px}
 .np-meta{min-width:0}
-.np-title{font:800 19px/1.2 var(--display);letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.np-title{font:700 15px/1.3 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .np-sub{font:500 11px/1.3 var(--mono);color:var(--mu);margin-top:5px;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .np-sub em{color:var(--fg2);font-style:normal}
 .seek-wrap{display:flex;align-items:center;gap:10px}
@@ -295,7 +322,7 @@ body.mini-mode .mini{display:flex;flex-direction:column;height:100vh;-webkit-app
 .mini-main{display:flex;align-items:center;gap:10px;flex:1;min-height:0}
 .mini-art{width:56px;height:56px;border-radius:12px;flex-shrink:0}
 .mini-info{flex:1;min-width:0;margin-left:2px}
-.mini-title{font:800 14px/1.2 var(--display);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini-title{font:700 12.5px/1.3 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mini-sub{font:500 10px/1.3 var(--mono);color:var(--mu);margin-top:3px;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mini-ctrl{-webkit-app-region:no-drag;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:var(--mu);flex-shrink:0;transition:color .15s,background .15s}
 .mini-ctrl:hover{color:var(--fg);background:var(--s2)}
@@ -336,7 +363,7 @@ body.zen-mode.hide-cursor{cursor:none}
 body.zen-mode .preview{display:none}
 .zen-bottom{position:absolute;left:0;right:0;bottom:0;z-index:3;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:0 26px 30px}
 .zen-track-wrap{min-width:0;display:flex;align-items:center;gap:12px;padding:10px 16px 10px 10px;border-radius:16px;background:color-mix(in srgb,var(--bg) 72%,transparent);backdrop-filter:blur(8px)}
-.zen-track{font:800 18px/1.25 var(--display);max-width:44vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.zen-track{font:700 15px/1.3 var(--mono);max-width:44vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .zen-art{width:44px;height:44px;border-radius:10px;flex-shrink:0}
 .zen-track-text{min-width:0}
 .zen-tt{font:500 11px/1 var(--mono);color:var(--fg2);margin-top:7px;font-variant-numeric:tabular-nums}
@@ -344,10 +371,11 @@ body.zen-mode .preview{display:none}
 .zen-ctrls .ctrl{color:var(--fg2)}
 .zen-progress{position:absolute;left:0;right:0;bottom:0;height:4px;z-index:3;background:color-mix(in srgb,var(--fg) 8%,transparent)}
 .zen-progress i{display:block;height:100%;width:0;background:var(--phase);transition:width 1s linear}
-.zen-top,.zen-bottom,.zen-sub .chip{transition:opacity .4s}
-body.zen-mode.hide-cursor .zen-top,body.zen-mode.hide-cursor .zen-bottom,body.zen-mode.hide-cursor .zen-sub .chip{opacity:0}
+/* the chrome fades with the cursor; the timers in the bottom bar stay */
+.zen-top,.zen-track-wrap,.zen-ctrls,.zen-sub .chip{transition:opacity .4s}
+body.zen-mode.hide-cursor :is(.zen-top,.zen-track-wrap,.zen-ctrls,.zen-sub .chip){opacity:0}
 .zen.no-clock .zen-center{display:none}
-.zen.no-track .zen-bottom{display:none}
+.zen.no-track :is(.zen-track-wrap,.zen-ctrls){display:none}
 
 /* ══ Settings drawer ══ */
 .scrim{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .3s}
@@ -424,8 +452,47 @@ body.zen-mode .scrim{background:transparent}
 .mode-grid span{font-size:11px;color:var(--mu)}
 .keys{display:grid;grid-template-columns:auto 1fr;gap:9px 14px;align-items:center}
 .keys dd{font-size:12px;color:var(--fg2)}
+.pill-card{display:flex;align-items:center;gap:12px;width:100%;border-radius:14px;padding:10px 14px 10px 12px;background:var(--s2);
+  border:1px solid transparent;text-align:left;transition:border-color .2s}
+.pill-card:hover{border-color:var(--bd2)}
+.pill-card.on{border-color:var(--fg)}
+.pill-card svg{width:48px;height:32px}
+.pill-card>span{flex:1;display:flex;flex-direction:column;gap:3px}
+.pill-card b{font-size:13px}
+.pill-card>span>span{font-size:11px;color:var(--mu)}
+.pill-today{font-family:var(--mono);font-size:11px;color:var(--fg2)}
+.pill-today b{color:var(--fg);font-weight:600}
+.path{display:grid;grid-template-columns:56px 1fr;align-items:center;gap:10px}
+.path span{font:600 11px/1 var(--mono);letter-spacing:.08em;color:var(--fg2)}
+.path input{height:34px;border-radius:10px;background:var(--s2);border:1px solid var(--bd2);padding:0 10px;font:500 11px/1 var(--mono);color:var(--fg);outline:none;min-width:0}
+.path input:focus{border-color:var(--fg2)}
+.path input::placeholder{color:var(--mu)}
 kbd{display:inline-block;min-width:26px;padding:4px 7px;border-radius:7px;background:var(--s3);border:1px solid var(--bd2);
   font:600 11px/1 var(--mono);color:var(--fg);text-align:center}
+
+/* ══ Timers (timers.css draws them; app.js moves the one dock into the slot of the view on screen) ══ */
+.tm-slot:empty,#tm-slot-park{display:none}
+/* standard: a card at the bottom of the side column, under the player or the library; minimal: the same
+   card under the stage (main makes the window that much taller). Its "+" opens over its head */
+.tm-slot-std{flex-shrink:0}
+.tm-slot-min{flex-shrink:0;padding:0 var(--pad) var(--pad)}
+.tm-dock.slot-card{--open:calc(100% - 22px);background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-card);padding:10px 10px 10px 12px}
+.tm-dock.slot-card .tm-new{top:10px;right:10px}
+.side:has(.tm-dock) .cover{min-height:60px}
+.tm-slot-mini{flex-shrink:0;margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);-webkit-app-region:no-drag}
+/* full screen: in the bottom bar, after the track */
+.tm-slot-zen{flex:0 1 auto;min-width:0;margin-right:auto}
+body.zen-mode.hide-cursor .tm-slot-zen .tm-new{opacity:0;pointer-events:none}
+.tm-names{display:flex;flex-wrap:wrap;gap:6px}
+.tm-names:empty::before{content:'None yet: the names you give timers come back here.';font-size:12px;color:var(--mu)}
+.tm-nm{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 4px 0 10px;border-radius:999px;background:var(--s2);
+  font:600 11.5px/1 var(--mono);color:var(--fg2);max-width:100%}
+.tm-nm i{width:10px;height:10px;border-radius:50%;background:var(--sc);flex-shrink:0}
+.tm-nm span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tm-nm small{color:var(--mu);font-size:10.5px;flex-shrink:0}
+.tm-nm button{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;color:var(--mu);flex-shrink:0}
+.tm-nm button:hover{background:var(--s3);color:var(--fg)}
+.tm-nm button svg{width:10px;height:10px}
 
 /* ══ Toast + drop overlay ══ */
 .toast{position:fixed;left:50%;bottom:26px;z-index:200;transform:translate(-50%,140%);opacity:0;
@@ -444,3 +511,16 @@ body.dropping::after{content:'Drop audio files to add them';position:fixed;inset
 @media (prefers-reduced-motion:reduce){
   *{transition-duration:.01ms!important;animation-duration:.01ms!important}
 }
+
+/* settings → pill: each size's width and height (2026-10-21) */
+.pd-list{display:flex;flex-direction:column;gap:8px}
+.pd{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:12px;align-items:center;padding:6px 8px;border-radius:12px;transition:background .2s}
+.pd-sl{display:flex;flex-direction:column;gap:4px;min-width:0}
+.pd.cur{background:var(--s2)}
+.pd-z{font-weight:700;font-size:12px;color:var(--fg2)}
+.pd.cur .pd-z{color:var(--fg)}
+.pd .slider{min-width:0}
+.pd-reset{font-size:11px;color:var(--mu);padding:4px 8px;border-radius:8px}
+.pd-reset:hover{color:var(--fg);background:var(--s3)}
+
+.pd .slider{grid-template-columns:52px minmax(0,1fr) 56px;gap:10px}

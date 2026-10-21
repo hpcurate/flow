@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FLOW pill</title>
+  <link rel="stylesheet" href="fonts/fonts.css">
+  <link rel="stylesheet" href="timers.css">
+  <link rel="stylesheet" href="pill.css">
+</head>
+<body class="sz-m">
+  <div class="panel" id="panel" hidden></div>
+  <!-- the group: the pill, then FLOW's timers when they are docked beside it, and a "+" on its free side -->
+  <div class="group" id="group">
+    <div class="pill idle" id="pill">
+      <div class="in" id="in"></div>
+      <div class="fx" id="fx"></div>
+    </div>
+    <div class="tdock" id="tdock"></div>
+    <button class="tplus" id="tplus" data-act="tnew" tabindex="-1" title="a new timer"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg></button>
+  </div>
+  <script src="timers-ui.js"></script>
+  <script src="pill.js"></script>
+</body>
+</html>

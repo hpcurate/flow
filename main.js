@@ -4,6 +4,8 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const net = require('net');
 const mark = require('./mark');
+const createPill = require('./pill-main');
+const createTimers = require('./timers-main');
 
 // The two resizable views. Mini's size comes from the renderer (it grows while a
 // timer runs); full screen restores whatever was there before.
@@ -15,10 +17,15 @@ const STATE_FILE = path.join(app.getPath('userData'), 'win-state.json');
 const LEGACY_POS = path.join(app.getPath('userData'), 'win-pos.json');
 let win;
 let tray = null;
+let pill = null;        // the pill (pill-main.js), once the app is ready
+let timers = null;      // the timers (timers-main.js), once the app is ready
 let saveT = null;
 let inMini = false;
 let fsRestore = null;   // bounds to return to after full screen (also marks the transition)
 let pending = null;     // a view change that arrived mid-transition, replayed after it
+// the timers docked under the minimal view make its window that much taller: want is what the
+// page last said, on is what the window has now (so its own size is always height - on)
+const dock = { want: 0, on: 0 };
 let state = { mode: 'standard', bounds: {}, onTop: false, maximized: false, bg: '#060607', mark: null };
 const isHex = c => /^#[0-9a-f]{6}$/i.test(c);
 
@@ -28,7 +35,9 @@ app.setAppUserModelId('com.hugo.flow');
 // one FLOW at a time — launching it again (e.g. while it sits in the tray) shows the running one
 const primary = app.requestSingleInstanceLock();
 if (!primary) app.quit();
-app.on('second-instance', () => {
+app.on('second-instance', (_e, argv) => {
+  // another app adding a timer (CORE's "how long?"): FLOW's window stays where it is
+  if (timers && timers.fromArgs(argv)) return;
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.show(); win.focus();
@@ -71,16 +80,32 @@ function boundsFor(mode, anchor) {
   return b;
 }
 function minFor(mode, b) {
-  const def = MODES[mode], area = screen.getDisplayMatching(b).workArea;
-  return [Math.min(def.minWidth, area.width), Math.min(def.minHeight, area.height)];
+  const def = MODES[mode], area = screen.getDisplayMatching(b).workArea, extra = mode === 'minimal' ? dock.on : 0;
+  return [Math.min(def.minWidth, area.width), Math.min(def.minHeight + extra, area.height)];
+}
+// taller by d, upward if the bottom would leave the screen
+function grow(b, d) {
+  const area = screen.getDisplayMatching(b).workArea;
+  b.height = Math.max(1, b.height + d);
+  if (b.y + b.height > area.y + area.height) b.y = Math.max(area.y, area.y + area.height - b.height);
+  return b;
 }
 function busy() { return !win || win.isDestroyed() || win.isFullScreen() || fsRestore; }
+function applyDock() {
+  if (busy() || inMini || state.mode !== 'minimal' || dock.want === dock.on) return;
+  const b = grow(win.getBounds(), dock.want - dock.on);
+  dock.on = dock.want;
+  win.setMinimumSize(1, 1);
+  win.setBounds(b);
+  win.setMinimumSize(...minFor('minimal', b));
+}
 
 function remember() {
   if (busy()) return;
   if (inMini) { const b = win.getBounds(); state.bounds.mini = { x: b.x, y: b.y }; }
   else {
-    state.bounds[state.mode] = win.getNormalBounds();
+    const nb = win.getNormalBounds();
+    state.bounds[state.mode] = state.mode === 'minimal' && dock.on ? { ...nb, height: nb.height - dock.on } : nb;
     if (state.mode === 'standard') state.maximized = win.isMaximized();
   }
   saveState();
@@ -91,6 +116,8 @@ function applyMode(mode) {
   if (win.isMaximized()) win.unmaximize();
   state.mode = mode;
   const b = boundsFor(mode, anchor);
+  dock.on = mode === 'minimal' ? dock.want : 0;
+  if (dock.on) grow(b, dock.on);
   win.setMinimumSize(1, 1);
   win.setResizable(true);
   win.setMaximizable(mode === 'standard');
@@ -121,7 +148,7 @@ function setMini(mini, width, height) {
   if (!inMini) {
     remember();
     if (win.isMaximized()) win.unmaximize();
-    inMini = true;
+    inMini = true; dock.on = 0;
     const saved = state.bounds.mini, at = win.getBounds();
     b = { x: at.x + at.width - width, y: at.y, width, height };
     if (saved && onScreen({ x: saved.x, y: saved.y, width, height })) b = { x: saved.x, y: saved.y, width, height };
@@ -153,7 +180,10 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // the page keeps time and fades the music while it is hidden to the tray (the pill's
+      // music bars, an open session's breaks); it stops drawing by itself (win:vis)
+      backgroundThrottling: false
     }
   });
   if (mode === 'minimal' && state.onTop) win.setAlwaysOnTop(true, 'floating');
@@ -169,6 +199,9 @@ function createWindow() {
   win.on('maximize', () => { queue(); win.webContents.send('win:maxed', true); });
   win.on('unmaximize', () => { queue(); win.webContents.send('win:maxed', false); });
 
+  const vis = () => { if (win && !win.isDestroyed()) win.webContents.send('win:vis', win.isVisible() && !win.isMinimized()); };
+  for (const ev of ['show', 'hide', 'minimize', 'restore']) win.on(ev, vis);
+
   win.on('enter-full-screen', () => win.webContents.send('win:fs', true));
   win.on('leave-full-screen', () => {
     win.setFullScreenable(false);
@@ -183,7 +216,7 @@ function createWindow() {
       win.setAlwaysOnTop(inMini || (state.mode === 'minimal' && state.onTop), 'floating');
       fsRestore = null;
       const p = pending; pending = null;
-      if (p) p();
+      if (p) p(); else applyDock();
     }, 50);
   });
 }
@@ -251,18 +284,33 @@ function queueShortcuts() {
   lnkT = setTimeout(() => restyleShortcuts(shownIcon, shortcutDirs(), process.execPath), 2000);
 }
 
-function createTray() {
-  tray = new Tray(iconFile());
-  tray.setToolTip('FLOW');
+function showFlow() {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show(); win.focus();
+}
+// rebuilt when the pill changes: its items say what they will do
+let trayKey = '';
+function trayMenu() {
+  const extra = [...(pill ? pill.trayItems() : []), ...(timers ? timers.trayItems() : [])];
+  const key = extra.map(i => i.label + (i.enabled === false ? '-' : '')).join('|');
+  if (!tray || key === trayKey) return;
+  trayKey = key;
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Show FLOW', click: () => { win.show(); win.focus(); } },
+    { label: 'Show FLOW', click: showFlow },
     { type: 'separator' },
     { label: 'Play / Pause', click: () => win.webContents.send('media', 'toggle') },
     { label: 'Next track', click: () => win.webContents.send('media', 'next') },
     { label: 'Start / Pause timer', click: () => win.webContents.send('media', 'pom') },
+    ...(extra.length ? [{ type: 'separator' }, ...extra] : []),
     { type: 'separator' },
     { label: 'Quit FLOW', click: () => { remember(); app.quit(); } }
   ]));
+}
+function createTray() {
+  tray = new Tray(iconFile());
+  tray.setToolTip('FLOW');
+  trayMenu();
   tray.on('click', () => {
     if (win.isVisible()) win.focus();
     else win.show();
@@ -342,19 +390,32 @@ app.on('will-quit', () => { sys.want = false; sysStop(); });
    timer buttons come back here as commands. One app at a time — a new one
    takes over and the old one is told bye. The last session is kept so a
    window that loads late still gets it. FLOW_LINK_PIPE moves the pipe (the
-   GUI test uses its own). */
+   GUI test uses its own). The pill (pill-main.js) hears every hello, session
+   and drop: with no app linked, its open session runs the clock through the
+   same messages (kind 'open'), and the timer's buttons go to it. */
 const LINK_PIPE = process.env.FLOW_LINK_PIPE || '\\\\.\\pipe\\hugo-flow-link';
-const link = { server: null, sock: null, last: null, app: '' };
+const link = { server: null, sock: null, last: null, lastAt: 0, app: '', k: null };
 const linkName = a => String(a || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 12).toUpperCase() || 'APP';
 function linkToRenderer(m) { if (win && !win.isDestroyed()) win.webContents.send('link:msg', m); }
 function linkSend(m) { if (link.sock && !link.sock.destroyed) { try { link.sock.write(JSON.stringify(m) + '\n'); } catch {} } }
+/* CORE draws a chain between FLOW and the linked app. It reads this file and
+   never the pipe: a second client on the pipe would take the clock from the
+   linked app. Written on every link change, cleared at start and on quit. */
+const LINK_STATUS = path.join(app.getPath('userData'), 'link.json');
+function linkStatus(on) {
+  const a = on && link.sock && link.app ? link.app : null;
+  try { fs.writeFileSync(LINK_STATUS, JSON.stringify({ linked: a, since: a ? Date.now() : 0, pid: process.pid })); } catch {}
+}
 function linkDrop(s) {
   if (link.sock !== s) return;
   link.sock = null; link.last = null; link.app = '';
-  linkToRenderer({ t: 'state', on: false });
+  linkStatus(false);
+  // an open session waiting underneath takes the clock back; otherwise FLOW's own timer does
+  if (!pill || !pill.linkDropped()) linkToRenderer({ t: 'state', on: false });
 }
 function linkServe() {
   link.server = net.createServer(s => {
+    const took = link.sock ? link.app : '';   // another app had the clock: the pill says "!"
     if (link.sock) {
       const old = link.sock;
       linkSend({ t: 'bye' });
@@ -372,9 +433,15 @@ function linkServe() {
         if (!line) continue;
         let m; try { m = JSON.parse(line); } catch { continue; }
         if (link.sock !== s) return;
-        if (m.t === 'hello') { link.app = linkName(m.app); linkSend({ t: 'hello', app: 'FLOW', v: 1 }); linkToRenderer({ t: 'state', on: true, app: link.app }); }
-        else if (m.t === 'show') { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } }
-        else if (m.t === 'session') { link.last = m; linkToRenderer(m); }
+        if (m.t === 'hello') {
+          link.app = linkName(m.app); linkSend({ t: 'hello', app: 'FLOW', v: 1 });
+          linkStatus(true);
+          if (pill) pill.linkHello(link.app, m, took);
+          linkToRenderer({ t: 'state', on: true, app: link.app });
+        }
+        // an app the pill just started is what was asked for: FLOW's window stays where it is
+        else if (m.t === 'show') { if (!(pill && pill.expecting(link.app))) showFlow(); }
+        else if (m.t === 'session') { link.last = m; link.lastAt = Date.now(); linkToRenderer(m); if (pill) pill.linkSession(m); }
         else if (m.t === 'bye') { try { s.end(); } catch {} linkDrop(s); }
       }
     });
@@ -383,18 +450,22 @@ function linkServe() {
   });
   link.server.on('error', () => {});   // the pipe is taken (another FLOW build): FLOW runs unlinked
   link.server.listen(LINK_PIPE);
+  linkStatus(false);   // a file left by a FLOW that crashed linked says unlinked again
 }
 ipcMain.on('link:ready', () => {
-  if (!link.sock || !link.app) return;
+  if (!link.sock || !link.app) { if (pill) pill.replay(); return; }
   linkToRenderer({ t: 'state', on: true, app: link.app });
   if (link.last) linkToRenderer(link.last);
 });
 ipcMain.on('link:cmd', (e, cmd) => {
+  // no app linked: FLOW's timer is mirroring the open session, which lives in the pill
+  if (!(link.sock && link.app) && pill && pill.mirrorCmd(cmd)) return;
   if (/^(toggle|skip|end)$/.test(cmd)) linkSend({ t: 'cmd', cmd });
   else if (cmd === 'unlink' && link.sock) { const s = link.sock; linkSend({ t: 'bye' }); try { s.end(); } catch {} linkDrop(s); }
 });
 app.on('will-quit', () => {
   if (link.sock) { linkSend({ t: 'bye' }); try { link.sock.end(); } catch {} }
+  linkStatus(false);
   if (link.server) try { link.server.close(); } catch {}
 });
 
@@ -408,6 +479,13 @@ app.whenReady().then(() => {
   });
   createWindow();
   createTray();
+  // the timers can dock beside the pill: each hears when the other changes
+  pill = createPill({ getWin: () => win, link, linkSend, linkToRenderer, showFlow, getTimers: () => timers,
+    onChange: () => { trayMenu(); if (timers) timers.pillChanged(); } });
+  timers = createTimers({ getWin: () => win, showFlow, getPill: () => pill, onChange: trayMenu });
+  // started by another app for a timer (--flow-timer=…): it is added once the timers are up
+  setTimeout(() => timers.fromArgs(process.argv), 300);
+  trayMenu();
   shownIcon = iconFile();
   queueShortcuts();   // catches a shortcut or pin made since the theme last changed
   app.on('activate', () => {
@@ -431,6 +509,7 @@ ipcMain.on('win:close', () => { if (win) { remember(); win.hide(); } });
 
 ipcMain.on('win:mode', (e, { mode }) => setMode(mode));
 ipcMain.on('win:mini', (e, { mini, width, height }) => setMini(mini, width, height));
+ipcMain.on('win:dock', (e, h) => { dock.want = Math.max(0, Math.min(1200, Math.round(+h || 0))); applyDock(); });
 ipcMain.on('win:ontop', (e, { on }) => {
   state.onTop = !!on; saveState();
   if (!busy() && !inMini) win.setAlwaysOnTop(state.mode === 'minimal' && state.onTop, 'floating');
@@ -468,4 +547,4 @@ ipcMain.on('win:fullscreen', (e, { on }) => {
   }
 });
 
-module.exports = { restyleShortcuts };   // for test/visual.cjs
+module.exports = { restyleShortcuts, get pill() { return pill; }, get timers() { return timers; }, dock };   // for test/visual.cjs

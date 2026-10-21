@@ -26,5 +26,17 @@ contextBridge.exposeInMainWorld('flowAPI', {
   onSys: (cb) => ipcRenderer.on('sys:msg', (_e, msg) => cb(msg)),
   // the link (TUTOR, GRIND): the app's session in, FLOW's timer buttons out (toggle / skip / end)
   onLink: (cb) => { ipcRenderer.on('link:msg', (_e, msg) => cb(msg)); ipcRenderer.send('link:ready'); },
-  linkCmd: (cmd) => ipcRenderer.send('link:cmd', cmd)
+  linkCmd: (cmd) => ipcRenderer.send('link:cmd', cmd),
+  // whether the window is on screen (the page stops drawing while it is hidden to the tray)
+  onVis: (cb) => ipcRenderer.on('win:vis', (_e, on) => cb(on)),
+  // the pill (pill-main.js): its settings in; FLOW's music, own timer, theme and music bars out
+  onPill: (cb) => ipcRenderer.on('pill:msg', (_e, m) => cb(m)),
+  pillSet: (k, v) => ipcRenderer.send('pill:set', { k, v }),
+  pillCmd: (cmd, arg) => ipcRenderer.send('pill:cmd', { ...(arg || {}), cmd }),
+  pillExt: (kind, v) => ipcRenderer.send('pill:ext', { kind, v }),
+  pillViz: (v) => ipcRenderer.send('pill:viz', v),
+  // the timers (timers-main.js): the list in, the buttons out; dock: how tall they are docked under the minimal view
+  onTimers: (cb) => { ipcRenderer.on('timers:msg', (_e, m) => cb(m)); ipcRenderer.send('timers:cmd', { cmd: 'ready' }); },
+  timersCmd: (m) => ipcRenderer.send('timers:cmd', m),
+  setDock: (h) => ipcRenderer.send('win:dock', h)
 });

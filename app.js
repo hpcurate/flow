@@ -104,6 +104,10 @@ function applyTheme(){
   // the icon wears the theme: the titlebar mark's shapes (k1 k2 k3 k5) on the background
   const k=[TH.c[0],TH.c[1],TH.c[2],TH.c[4]];
   if(winAPI&&winAPI.setTheme) winAPI.setTheme(TH.bg,k);
+  // the pill and the timers' own windows wear it too
+  const th={bg:TH.bg,fg:TH.fg,fg2:TH.fg2,mu:TH.mu,s1:TH.s1,s2:TH.s2,s3:TH.s3,bd:TH.bd,bd2:TH.bd2,c:TH.c,focus:TH.focus,brk:TH.brk,motion:settings.motion};
+  if(winAPI&&winAPI.pillExt) winAPI.pillExt('theme',th);
+  if(winAPI&&winAPI.timersCmd) winAPI.timersCmd({cmd:'theme',v:th});
   document.querySelector('link[rel=icon]').href='data:image/svg+xml,'+encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="${TH.bg}"/>`+
     `<circle cx="9.75" cy="9.75" r="5.75" fill="${k[0]}"/><path d="M16.5 15.5V4a11.5 11.5 0 0 1 11.5 11.5z" fill="${k[1]}"/>`+
@@ -273,12 +277,13 @@ function updateNP(){
   }
   updateTray();
   syncMini();
+  pillMusic();
 }
 let trayTip='';
 function updateTray(){
   if(!winAPI||!winAPI.setTray) return;
   const t=tracks[current], s=src==='sys'?sys:null;
-  let str=link.on?'FLOW · linked to '+link.app:'FLOW';
+  let str=isOpen()?'FLOW · open session'+(link.name?' · '+link.name:''):link.on?'FLOW · linked to '+link.app:'FLOW';
   if(pom.running) str+=` · ${phaseLabel()} ${clockText(pom.remaining)}`;
   if(s){ if(s.playing) str+=' · ♪ '+(s.title||appName(s.app))+(s.artist?' — '+s.artist:''); }
   else if(t&&!audio.paused) str+=' · ♪ '+stripExt(t.name);
@@ -298,6 +303,7 @@ function reflectPlayState(){
   }
   updateTray();
   syncMini();
+  pillMusic();
 }
 /* the seek bar and times, for whichever player is showing */
 let seeking=false;
@@ -530,7 +536,7 @@ function renderPom(){
   setClock($('pom-time'),clockText(pom.remaining));
   $('pom-time').classList.toggle('long',pom.remaining>=6000);
   document.body.dataset.phase=pom.phase==='focus'?'focus':'break';
-  $('pom-phase').textContent=(link.on?link.app+' · ':'')+phaseLabel()+(!pom.running&&pom.remaining<pom.total?' · paused':'');
+  $('pom-phase').textContent=(link.on?linkLabel()+' · ':'')+phaseLabel()+(!pom.running&&pom.remaining<pom.total?' · paused':'');
   const lbl=pom.running?'Pause':pom.remaining<pom.total?'Resume':pom.phase==='focus'?'Start focus':'Start break';
   $('pom-start-lbl').textContent=lbl;
   $('pom-start-ico').innerHTML=pom.running?ICO_PAUSE:ICO_PLAY;
@@ -545,6 +551,7 @@ function renderPom(){
   }
   updateTray();
   syncMini();
+  pillPom();
 }
 function pomTick(){
   rollDay();
@@ -570,6 +577,7 @@ function pomPause(){
   pom.running=false; clearInterval(pom.timer); renderPom();
 }
 function pomReset(){
+  if(isOpen()){ winAPI.linkCmd('end'); return; }
   if(link.on){ toast(`The session runs from ${link.app} — end it there`); return; }
   pomPause(); pom.phase='focus'; pom.long=false; setRemaining(settings.focus*60); renderPom();
 }
@@ -579,7 +587,7 @@ function pomResetCount(){
 }
 /* picking a phase by hand: switch the timer only, leave the music alone */
 function selectPhase(key){
-  if(link.on){ toast(`Linked to ${link.app} — its session sets the phase`); return; }
+  if(link.on){ toast(isOpen()?'The open session sets the phase — skip takes a break':`Linked to ${link.app} — its session sets the phase`); return; }
   pomPause();
   pom.phase=key==='focus'?'focus':'break';
   pom.long=key==='long';
@@ -663,36 +671,56 @@ function pomPhaseEnd(){
    FLOW's own pomodoro. FLOW's timer buttons send commands back to it. Another
    app linking takes over (main tells the first one bye); FLOW's own timer
    stays put underneath. When the link drops, it comes back exactly as it was. */
-const link={on:false, app:'', saved:null, phase:null};
+/* An open session (started from the pill, kept in main by pill-main.js) comes
+   through here too, as kind 'open': it is the clock the same way, its name is
+   the focus line under the clock, and reset ends it. */
+const link={on:false, app:'', saved:null, phase:null, kind:'link', name:''};
+const isOpen=()=>link.on&&link.kind==='open';
+function linkLabel(){ return link.kind==='open'?(link.name||'Open'):link.app; }
 function showLinkApp(){
   const b=$('link-badge');
-  b.querySelector('span').textContent=link.app;
-  b.title=`Linked to ${link.app} — its session runs the timer. Click to unlink`;
+  b.querySelector('span').textContent=link.kind==='open'?(link.name||'open'):link.app;
+  measureLabel(b.querySelector('span'));
+  b.title=link.kind==='open'?`Open session${link.name?' · '+link.name:''} — rename it under the clock, end it with reset`
+    :`Linked to ${link.app} — its session runs the timer. Click to unlink`;
 }
-function setLinked(on,app){
-  if(on&&app&&app!==link.app){
-    link.app=app; showLinkApp();
-    if(link.on){ link.phase=null; toast('Linked to '+app); renderPom(); return; }
+function setLinked(on,app,kind,name){
+  if(on){
+    const k=kind||'link', switched=!!app&&(app!==link.app||k!==link.kind);
+    link.kind=k; link.name=name||'';
+    if(app) link.app=app;
+    showLinkApp(); reflectIntention();
+    if(switched&&link.on){ link.phase=null; toast(k==='open'?'Back to your open session':'Linked to '+app); renderPom(); return; }
   }
-  if(on===link.on) return;
+  if(on===link.on){ if(on) renderPom(); return; }
   link.on=on;
   document.body.classList.toggle('linked',on);
+  reflectIntention();
   clearInterval(pom.timer);
   if(on){
     link.saved={phase:pom.phase,long:pom.long,remaining:pom.remaining,total:pom.total};
     pom.running=false;
-    toast('Linked to '+link.app);
+    toast(link.kind==='open'?'Open session'+(link.name?' · '+link.name:''):'Linked to '+link.app);
   } else {
     pom.running=false;
     if(link.saved) Object.assign(pom,link.saved);
     link.saved=null; link.phase=null;
-    toast('Unlinked from '+link.app);
+    toast(link.kind==='open'?'Open session ended':'Unlinked from '+link.app);
+    link.kind='link'; link.name=''; reflectIntention();
   }
   renderPom();
 }
+/* the focus line under the clock: FLOW's own intention, or the open session's name */
+let renameT=null;
+function reflectIntention(){
+  const el=$('intention');
+  el.placeholder=isOpen()?'Name this open session':'What are you focusing on?';
+  if(document.activeElement===el) return;
+  el.value=isOpen()?link.name:(settings.intention||'');
+}
 function linkTick(){ if(pom.remaining>0) pom.remaining--; pom.tickAt=performance.now(); renderPom(); }
 function onLink(m){
-  if(m.t==='state'){ setLinked(!!m.on,m.app); return; }
+  if(m.t==='state'){ setLinked(!!m.on,m.app,m.kind,m.name); return; }
   if(m.t!=='session') return;
   if(!link.on) setLinked(true);
   clearInterval(pom.timer);
@@ -854,8 +882,15 @@ const MINI_W=360, MINI_H_BASE=84, MINI_H_POM=58;
 function applyModeClass(){
   document.body.classList.toggle('mode-minimal',winMode==='minimal');
   document.body.classList.toggle('mode-standard',winMode==='standard');
-  reflectModes();
+  reflectModes(); placeDock(); measureLabels();
 }
+/* the titlebar's names slide out on hover (flow.css): each one's width, measured once its font is in */
+function measureLabel(sp){
+  if(!sp) return;
+  const mx=parseFloat(getComputedStyle(sp).maxWidth);
+  sp.style.setProperty('--lw',Math.ceil(Math.min(sp.scrollWidth,isFinite(mx)?mx:1e4))+'px');
+}
+function measureLabels(){ document.querySelectorAll('.mode-btn span,.link-badge span').forEach(measureLabel); }
 function reflectModes(){
   const cur=zenOn?'fullscreen':miniOn?'mini':winMode;
   document.querySelectorAll('[data-mode]').forEach(b=>{ const on=b.dataset.mode===cur; b.classList.toggle('on',on); b.setAttribute('aria-pressed',on); });
@@ -881,13 +916,13 @@ function setOnTop(on){
   toast(on?'Minimal view stays on top':'Minimal view no longer on top');
 }
 
-function miniHeight(){ return MINI_H_BASE + (pom.running?MINI_H_POM:0); }
+function miniHeight(){ return MINI_H_BASE + (pom.running?MINI_H_POM:0) + tmMiniH(); }
 function enterMini(){
   if(miniOn) return;
   if(zenOn) exitZen();
   closeDrawer();
   miniOn=true; document.body.classList.add('mini-mode');
-  syncMini(true); curMiniH=miniHeight();
+  placeDock(); syncMini(true); curMiniH=miniHeight();
   if(winAPI) winAPI.setMini(true,MINI_W,curMiniH);
   reflectModes();
 }
@@ -895,7 +930,7 @@ function exitMini(){
   if(!miniOn) return;
   miniOn=false; document.body.classList.remove('mini-mode');
   if(winAPI) winAPI.setMini(false);
-  reflectModes();
+  reflectModes(); placeDock();
 }
 function syncMini(force){
   if(!miniOn && !force) return;
@@ -921,6 +956,7 @@ function enterZen(){
   ensureGraph();
   zenOn=true;
   document.body.classList.add('zen-mode');
+  placeDock();
   if(winAPI) winAPI.setFullscreen(true);
   else document.documentElement.requestFullscreen?.().catch(()=>{});
   zenGeo=null; refreshZen(); wakeCursor(); reflectModes();
@@ -930,7 +966,7 @@ function exitZenUI(){
   zenOn=false;
   clearTimeout(cursorT);
   document.body.classList.remove('zen-mode','hide-cursor');
-  stageGeo=null; reflectModes();
+  stageGeo=null; reflectModes(); placeDock();
 }
 function exitZen(){
   exitZenUI();
@@ -982,6 +1018,7 @@ function setDrawerTab(tab){
   drawerTab=tab;
   document.querySelectorAll('[data-tab]').forEach(b=>{ const on=b.dataset.tab===tab; b.classList.toggle('on',on); b.setAttribute('aria-selected',on); });
   document.querySelectorAll('[data-pane]').forEach(p=>p.classList.toggle('on',p.dataset.pane===tab));
+  reflectPill(); reflectTimers();
 }
 function openDrawer(tab){
   if(miniOn) return;
@@ -989,7 +1026,7 @@ function openDrawer(tab){
   drawerOpen=true;
   document.body.classList.add('drawer-open');
   $('drawer').setAttribute('aria-hidden','false');
-  reflectSettings(); wakeCursor();
+  reflectSettings(); reflectPill(); reflectTimers(); wakeCursor();
 }
 function closeDrawer(){
   if(!drawerOpen) return;
@@ -1037,7 +1074,7 @@ function reflectSettings(){
     const k=o.dataset.out, v=settings[k];
     o.textContent=k==='vizSmooth'||k==='vizDensity'?Math.round(v*100)+'%':(+v).toFixed(2)+'×';
   });
-  document.querySelectorAll('.stepper').forEach(st=>{
+  document.querySelectorAll('.stepper[data-step]').forEach(st=>{
     const v=settings[st.dataset.step];
     st.querySelector('.st-val').textContent=v===0&&st.dataset.zero?st.dataset.zero:v+st.dataset.unit;
   });
@@ -1051,7 +1088,7 @@ function bindSettings(){
   });
   document.querySelectorAll('[data-toggle]').forEach(b=>b.addEventListener('click',()=>setSetting(b.dataset.toggle,!settings[b.dataset.toggle])));
   document.querySelectorAll('input[data-range]').forEach(inp=>inp.addEventListener('input',()=>setSetting(inp.dataset.range,+inp.value)));
-  document.querySelectorAll('.stepper').forEach(st=>st.addEventListener('click',e=>{
+  document.querySelectorAll('.stepper[data-step]').forEach(st=>st.addEventListener('click',e=>{
     const b=e.target.closest('[data-s]'); if(!b) return;
     const k=st.dataset.step, lo=+st.dataset.min, hi=+st.dataset.max;
     setSetting(k,Math.max(lo,Math.min(hi,settings[k]+(+b.dataset.s)*(e.shiftKey?5:1))));
@@ -1073,6 +1110,294 @@ function cycleViz(){
   if(!zenOn&&!drawerOpen) toast('Visualiser · '+Viz.MUSIC_STYLES[settings.vizStyle]);
 }
 function cycleTimer(){ setSetting('timerStyle',nextKey(Viz.TIMER_STYLES,settings.timerStyle)); }
+
+/* ════════════ The pill ════════════
+   A small always-on-top session bar that runs alongside every view (main.js +
+   pill-main.js own it). This page tells it what plays, FLOW's own timer and
+   the theme, samples four bands of the analyser for its music bars, and
+   holds its settings tab. The open session itself lives in main. */
+let pillCfg=null, pillToday=null, pillOpen=null;
+let pillMusicKey='', pillPomKey='', winShown=true;
+function pillMusic(){
+  if(!winAPI||!winAPI.pillExt) return;
+  const s=src==='sys'?sys:null, t=tracks[current];
+  const v=s?{title:s.title||appName(s.app),sub:appName(s.app)+(s.artist?' · '+s.artist:''),playing:!!s.playing}
+    :t?{title:stripExt(t.name),sub:'FLOW',playing:flowPlaying()}:null;
+  const k=JSON.stringify(v);
+  if(k===pillMusicKey) return;
+  pillMusicKey=k; winAPI.pillExt('music',v);
+}
+/* FLOW's own pomodoro, while it runs (or waits mid-phase) and no app or open session has the clock */
+function pillPom(){
+  if(!winAPI||!winAPI.pillExt) return;
+  const v=link.on||(!pom.running&&pom.remaining===pom.total)?null
+    :{phase:pom.phase,long:pom.long,running:pom.running,left:pom.remaining,total:pom.total};
+  const k=JSON.stringify(v);
+  if(k===pillPomKey) return;
+  pillPomKey=k; winAPI.pillExt('pom',v);
+}
+/* the music bars: bass, low mids, high mids, highs, ~30 times a second while the pill shows them */
+const PV_BANDS=[[40,160],[160,640],[640,2560],[2560,10000]];
+let pvT=null, pvBuf=null, pvSent='';
+const pvLev=[0,0,0,0];
+function pillVizLoop(on){
+  if(on&&!pvT) pvT=setInterval(pillVizTick,33);
+  else if(!on&&pvT){ clearInterval(pvT); pvT=null; pvSent=''; }
+}
+function pillVizTick(){
+  const playing=src==='sys'?!!(sys&&sys.playing):flowPlaying();
+  let raw=null;
+  if(analyser&&playing&&settings.motion!=='still'){
+    if(!pvBuf||pvBuf.length!==analyser.frequencyBinCount) pvBuf=new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(pvBuf); raw=pvBuf;
+  }
+  const hz=(actx?actx.sampleRate:48000)/2/(raw?raw.length:1024);
+  for(let b=0;b<4;b++){
+    let v=0;
+    if(raw){
+      const lo=Math.max(1,Math.floor(PV_BANDS[b][0]/hz)), hi=Math.max(lo+1,Math.min(raw.length,Math.ceil(PV_BANDS[b][1]/hz)));
+      let s=0, mx=0;
+      for(let j=lo;j<hi;j++){ s+=raw[j]; if(raw[j]>mx) mx=raw[j]; }
+      v=(s/(hi-lo)*.5+mx*.5)/255;
+      v=Math.min(1,Math.max(0,(v-.16)/.84)*(1+b*.22)*settings.vizSens);
+    }
+    pvLev[b]+=(v-pvLev[b])*(v>pvLev[b]?.6:.18);
+  }
+  const out=pvLev.map(x=>Math.round(x*100)), k=out.join();
+  if(k!==pvSent){ pvSent=k; winAPI.pillViz(out); }
+}
+function onPill(m){
+  if(m.t==='cfg'){
+    pillCfg=m.cfg; pillToday=m.today; pillOpen=m.open;
+    pillVizLoop(!!(m.want&&m.want.viz));
+    reflectPill();
+  } else if(m.t==='want') pillVizLoop(!!(m.want&&m.want.viz));
+  else if(m.t==='drawer') openDrawer(m.tab);
+}
+function pillOn(){ return !!(pillCfg&&pillCfg.on); }
+function togglePill(){ if(!winAPI||!winAPI.pillSet) return; winAPI.pillSet('on',!pillOn()); toast(pillOn()?'Pill hidden':'Pill on — drag it onto the taskbar'); }
+function reflectPill(){
+  const on=pillOn();
+  $('pill-btn').classList.toggle('on',on); $('pill-btn').setAttribute('aria-pressed',on);
+  $('pill-card').classList.toggle('on',on);
+  if(!pillCfg||!(drawerOpen&&drawerTab==='pill')) return;
+  const c=pillCfg;
+  document.querySelectorAll('[data-pill-set]').forEach(g=>{
+    const v=String(c[g.dataset.pillSet]);
+    g.querySelectorAll('[data-v]').forEach(b=>{ const o=b.dataset.v===v; b.classList.toggle('on',o); b.setAttribute('aria-pressed',o); });
+  });
+  document.querySelectorAll('[data-pill-toggle]').forEach(b=>{ const o=!!c[b.dataset.pillToggle]; b.classList.toggle('on',o); b.setAttribute('aria-checked',o); b.setAttribute('role','switch'); });
+  document.querySelectorAll('input[data-pill-range]').forEach(i=>{ if(document.activeElement!==i) i.value=c[i.dataset.pillRange]; setPct(i); });
+  document.querySelectorAll('[data-pill-out]').forEach(o=>{ o.textContent=Math.round(c[o.dataset.pillOut]*100)+'%'; });
+  document.querySelectorAll('[data-pill-step]').forEach(st=>{
+    const v=c[st.dataset.pillStep];
+    st.querySelector('.st-val').textContent=v===0&&st.dataset.zero?st.dataset.zero:st.dataset.pillStep==='goalMin'?fmtMins(v*60):v+'m';
+  });
+  document.querySelectorAll('input[data-pill-text]').forEach(i=>{ if(document.activeElement!==i) i.value=c[i.dataset.pillText]||''; });
+  if(c.dims) document.querySelectorAll('input[data-pd]').forEach(i=>{
+    const [z,k]=i.dataset.pd.split('.'), v=c.dims[z][k];
+    if(document.activeElement!==i) i.value=v;
+    setPct(i);
+    i.closest('.pd').classList.toggle('cur',c.size===z);
+    const o=document.querySelector(`[data-pd-out="${i.dataset.pd}"]`); if(o) o.textContent=v+' px';
+  });
+  const t=pillToday, by=t&&t.by.filter(x=>x.min>0).slice(0,4).map(x=>`${esc(x.name||'unnamed')} <b>${fmtMins(x.min*60)}</b>`).join(' · ');
+  $('pill-today').innerHTML=t&&t.n?`Today: <b>${fmtMins(t.min*60)}</b> in ${t.n} open session${t.n===1?'':'s'}${by?' — '+by:''}`:'No open session today yet.';
+  $('pill-start').textContent=pillOpen?'End the open session':'Start an open session';
+  $('pill-start').disabled=!pillOpen&&link.on;
+}
+/* each pill size's width and height: built once (a slider redrawn while dragged would drop it), values set by reflectPill */
+const PD={s:{name:'Small',w:[120,480],h:[20,64]},m:{name:'Medium',w:[300,1100],h:[22,64]},l:{name:'Large',w:[320,1200],h:[28,80]}};
+const PD_DEF={s:{w:232,h:28},m:{w:660,h:32},l:{w:680,h:44}};
+function buildPillDims(){
+  const host=$('pill-dims'); if(!host) return;
+  host.innerHTML=Object.entries(PD).map(([z,d])=>`<div class="pd" data-pd-size="${z}"><span class="pd-z">${d.name}</span><span class="pd-sl">
+    <label class="slider"><span class="lbl">Width</span><input type="range" data-pd="${z}.w" min="${d.w[0]}" max="${d.w[1]}" step="4"><span class="sv" data-pd-out="${z}.w"></span></label>
+    <label class="slider"><span class="lbl">Height</span><input type="range" data-pd="${z}.h" min="${d.h[0]}" max="${d.h[1]}" step="1"><span class="sv" data-pd-out="${z}.h"></span></label></span>
+    <button class="pd-reset" data-pd-reset="${z}" title="back to ${PD_DEF[z].w} × ${PD_DEF[z].h}">reset</button></div>`).join('');
+  host.addEventListener('input',e=>{
+    const i=e.target.closest('input[data-pd]'); if(!i||!pillCfg||!pillCfg.dims) return;
+    const [z,k]=i.dataset.pd.split('.'), dims=JSON.parse(JSON.stringify(pillCfg.dims));
+    dims[z][k]=+i.value; setPct(i);
+    const o=document.querySelector(`[data-pd-out="${i.dataset.pd}"]`); if(o) o.textContent=i.value+' px';
+    winAPI.pillSet('dims',dims);
+  });
+  host.addEventListener('click',e=>{
+    const b=e.target.closest('[data-pd-reset]'); if(!b||!pillCfg||!pillCfg.dims) return;
+    const dims=JSON.parse(JSON.stringify(pillCfg.dims)); dims[b.dataset.pdReset]={...PD_DEF[b.dataset.pdReset]};
+    winAPI.pillSet('dims',dims);
+  });
+}
+function bindPill(){
+  buildPillDims();
+  document.querySelectorAll('[data-pill-set]').forEach(g=>g.addEventListener('click',e=>{
+    const b=e.target.closest('[data-v]'); if(b&&g.contains(b)) winAPI.pillSet(g.dataset.pillSet,b.dataset.v);
+  }));
+  document.querySelectorAll('[data-pill-toggle]').forEach(b=>b.addEventListener('click',()=>winAPI.pillSet(b.dataset.pillToggle,!(pillCfg&&pillCfg[b.dataset.pillToggle]))));
+  document.querySelectorAll('input[data-pill-range]').forEach(i=>i.addEventListener('input',()=>{ setPct(i); winAPI.pillSet(i.dataset.pillRange,+i.value); }));
+  document.querySelectorAll('[data-pill-step]').forEach(st=>st.addEventListener('click',e=>{
+    const b=e.target.closest('[data-s]'); if(!b||!pillCfg) return;
+    const k=st.dataset.pillStep, d=+st.dataset.d*(e.shiftKey?4:1);
+    winAPI.pillSet(k,Math.max(+st.dataset.min,Math.min(+st.dataset.max,pillCfg[k]+(+b.dataset.s)*d)));
+  }));
+  document.querySelectorAll('input[data-pill-text]').forEach(i=>i.addEventListener('change',()=>winAPI.pillSet(i.dataset.pillText,i.value)));
+  $('pill-btn').onclick=togglePill;
+  $('pill-card').onclick=togglePill;
+  $('pill-start').onclick=()=>{ if(pillOpen) winAPI.pillCmd('end'); else winAPI.pillCmd('start',{name:settings.intention||''}); };
+  $('pill-reset-pos').onclick=()=>{ winAPI.pillCmd('reset-pos'); toast('The pill goes back beside the taskbar icons'); };
+  const k=$('pill-keys');
+  if(k) k.textContent='Ctrl+Alt+Shift+O shows or hides the pill, Ctrl+Alt+Shift+P starts or pauses the session';
+}
+
+/* ════════════ Timers ════════════
+   Quick timers made on the fly ("laundry 2h"): main (timers-main.js) keeps
+   them and timers-ui.js draws them. While they show in this window they are
+   one dock, moved into the view on screen: a strip under the standard
+   titlebar, a stack under the minimal view (main makes the window that much
+   taller), compact rows under the mini bar, a column at the top right of full
+   screen. Popped out, main gives them a window of their own instead. One that
+   ends toasts and rings here (a brighter bell than the phase chime, once or
+   until it is dealt with) while main pops the overlay. */
+let tmUI=null, tmState=null, tmWantFocus=false, tmDockSent=-1, bellCount=0, forgetT=null;
+const tmRings=new Map();   // timer id → the interval ringing it
+function tmOn(){ return !!(tmState&&tmState.cfg.on); }
+function tmPopped(){ return tmOn()&&!!tmState.cfg.pop; }
+function tmHere(){ return tmOn()&&!tmState.cfg.pop; }
+function placeDock(){
+  if(!tmUI) return;
+  const slot=!tmHere()?'park':zenOn?'zen':miniOn?'mini':winMode==='minimal'?'min':'std', el=tmUI.el, host=$('tm-slot-'+slot);
+  if(el.parentNode!==host) host.appendChild(el);
+  for(const s of ['park','std','min','mini','zen']) el.classList.toggle('slot-'+s,s===slot);
+  el.classList.toggle('slot-card',slot==='std'||slot==='min');
+  reportDock();
+}
+/* the minimal view grows by the timers under it: main hears how tall they are there (0 when they aren't in this window) */
+function reportDock(){
+  if(!winAPI||!winAPI.setDock) return;
+  const h=!tmHere()?0:winMode==='minimal'&&!miniOn&&!zenOn?Math.ceil($('tm-slot-min').getBoundingClientRect().height):null;
+  if(h===null||h===tmDockSent) return;
+  tmDockSent=h; winAPI.setDock(h);
+}
+function tmMiniH(){ const s=$('tm-slot-mini'); return s&&s.firstChild?Math.ceil(s.getBoundingClientRect().height)+10:0; }
+function onTimers(m){
+  if(m.t==='state'){
+    tmState=m; tmUI.set(m);
+    placeDock(); reflectTimers(); hushRings();
+    if(tmWantFocus&&tmOn()){ tmWantFocus=false; focusTimers(); }
+  } else if(m.t==='done'){
+    toast(m.name+' — done');
+    if(m.sound==='chime') bell(); else if(m.sound==='ring') ringFor(m.id);
+  } else if(m.t==='ding'){
+    if(m.sound) ding();
+    tmUI.ding(m);
+  } else if(m.t==='focus') focusTimers();
+}
+function focusTimers(){
+  if(tmPopped()){ winAPI.timersCmd({cmd:'focus'}); return; }
+  if(!tmHere()) return;
+  if(miniOn) exitMini();
+  closeDrawer();
+  setTimeout(()=>tmUI.focus(),60);
+}
+/* N, and the hotkey or tray through main: the new-timer field, turning the timers on first if need be */
+function newTimer(){
+  if(!winAPI||!winAPI.timersCmd) return;
+  if(!tmOn()){ tmWantFocus=true; winAPI.timersCmd({cmd:'set',k:'on',v:true}); return; }
+  focusTimers();
+}
+function toggleTimers(){
+  if(!winAPI||!winAPI.timersCmd) return;
+  const on=!tmOn(), run=tmState?tmState.list.filter(t=>!t.done).length:0;
+  winAPI.timersCmd({cmd:'set',k:'on',v:on});
+  toast(on?'Timers on — N for a new one':run?`Timers hidden — ${run} still running, they'll still ring`:'Timers hidden');
+}
+/* a timer's bell: three bright notes rising, so it never sounds like the phase chime */
+function bell(){
+  bellCount++;
+  try{
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state==='suspended') actx.resume();
+    [1046.5,1318.5,1568].forEach((f,i)=>{
+      const o=actx.createOscillator(), g=actx.createGain();
+      o.type='triangle'; o.frequency.value=f;
+      o.connect(g); g.connect(actx.destination);
+      const t0=actx.currentTime+i*0.14;
+      g.gain.setValueAtTime(0,t0);
+      g.gain.linearRampToValueAtTime(0.2,t0+0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+0.8);
+      o.start(t0); o.stop(t0+0.82);
+    });
+  }catch{}
+}
+/* a timer's ding (every so often while it runs): one soft note, nothing like the end's bell */
+function ding(){
+  try{
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state==='suspended') actx.resume();
+    [[1318.5,0],[1760,.09]].forEach(([f,d])=>{
+      const o=actx.createOscillator(), g=actx.createGain();
+      o.type='sine'; o.frequency.value=f;
+      o.connect(g); g.connect(actx.destination);
+      const t0=actx.currentTime+d;
+      g.gain.setValueAtTime(0,t0);
+      g.gain.linearRampToValueAtTime(0.09,t0+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+0.55);
+      o.start(t0); o.stop(t0+0.57);
+    });
+  }catch{}
+}
+// "ring until dismissed": every couple of seconds, for a minute at most
+function ringFor(id){
+  if(tmRings.has(id)) return;
+  bell();
+  const from=Date.now();
+  tmRings.set(id,setInterval(()=>{ if(Date.now()-from>60000) stopRing(id); else bell(); },2400));
+}
+function stopRing(id){ clearInterval(tmRings.get(id)); tmRings.delete(id); }
+function hushRings(){ for(const id of [...tmRings.keys()]){ const t=tmState.list.find(x=>x.id===id); if(!t||!t.done) stopRing(id); } }
+function reflectTimers(){
+  if(!tmUI) return;
+  const on=tmOn(), pop=tmPopped();
+  $('tm-btn').classList.toggle('on',on); $('tm-btn').setAttribute('aria-pressed',on);
+  $('tm-pop-btn').hidden=!on; $('tm-pop-btn').classList.toggle('on',pop); $('tm-pop-btn').setAttribute('aria-pressed',pop);
+  $('tm-pop-btn').title=pop?'Bring the timers back into FLOW':'Pop the timers out into a small window of their own';
+  $('tm-card').classList.toggle('on',on);
+  if(!tmState||!(drawerOpen&&drawerTab==='timers')) return;
+  const c=tmState.cfg;
+  document.querySelectorAll('[data-tm-set]').forEach(g=>{
+    const v=String(c[g.dataset.tmSet]);
+    g.querySelectorAll('[data-v]').forEach(b=>{ const o=b.dataset.v===v; b.classList.toggle('on',o); b.setAttribute('aria-pressed',o); });
+  });
+  document.querySelectorAll('[data-tm-toggle]').forEach(b=>{ const o=!!c[b.dataset.tmToggle]; b.classList.toggle('on',o); b.setAttribute('aria-checked',o); b.setAttribute('role','switch'); });
+  document.querySelector('[data-tm-toggle=pop]').disabled=!c.on;
+  document.querySelectorAll('input[data-tm-range]').forEach(i=>{ if(document.activeElement!==i) i.value=c[i.dataset.tmRange]; setPct(i); });
+  document.querySelectorAll('[data-tm-out]').forEach(o=>{ o.textContent=Math.round(c[o.dataset.tmOut]*100)+'%'; });
+  document.querySelectorAll('input[data-tm-text]').forEach(i=>{ if(document.activeElement!==i) i.value=c[i.dataset.tmText]||''; });
+  const X='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+  $('tm-names').innerHTML=tmState.names.map(n=>`<span class="tm-nm" style="--sc:${n.color}"><i></i><span>${esc(n.name)}</span><small>${TimersUI.fmtDur(n.dur)}</small>`+
+    `<button data-forget="${esc(n.name)}" title="Forget ${esc(n.name)}">${X}</button></span>`).join('');
+  $('tm-forget-all').disabled=!tmState.names.length;
+}
+function bindTimers(){
+  const cmd=m=>winAPI.timersCmd(m), cfg=k=>!!(tmState&&tmState.cfg[k]);
+  document.querySelectorAll('[data-tm-set]').forEach(g=>g.addEventListener('click',e=>{
+    const b=e.target.closest('[data-v]'); if(b&&g.contains(b)) cmd({cmd:'set',k:g.dataset.tmSet,v:b.dataset.v});
+  }));
+  document.querySelectorAll('[data-tm-toggle]').forEach(b=>b.addEventListener('click',()=>cmd({cmd:'set',k:b.dataset.tmToggle,v:!cfg(b.dataset.tmToggle)})));
+  document.querySelectorAll('input[data-tm-range]').forEach(i=>i.addEventListener('input',()=>{ setPct(i); cmd({cmd:'set',k:i.dataset.tmRange,v:+i.value}); }));
+  document.querySelectorAll('input[data-tm-text]').forEach(i=>i.addEventListener('change',()=>cmd({cmd:'set',k:i.dataset.tmText,v:i.value})));
+  $('tm-names').addEventListener('click',e=>{ const b=e.target.closest('[data-forget]'); if(b) cmd({cmd:'forget',name:b.dataset.forget}); });
+  // forgetting them all asks first: a second click within a few seconds
+  $('tm-forget-all').onclick=()=>{
+    const b=$('tm-forget-all');
+    if(!forgetT){ b.textContent='Sure? Click again'; forgetT=setTimeout(()=>{ forgetT=null; b.textContent='Forget them all'; },3500); return; }
+    clearTimeout(forgetT); forgetT=null; b.textContent='Forget them all';
+    cmd({cmd:'forget',name:'*'}); toast('Timer names forgotten');
+  };
+  $('tm-btn').onclick=toggleTimers;
+  $('tm-card').onclick=toggleTimers;
+  $('tm-pop-btn').onclick=()=>cmd({cmd:'pop'});
+}
 
 /* ════════════ Render loop ════════════
    One rAF loop draws whichever canvases are on screen: the stage dial (standard
@@ -1113,7 +1438,7 @@ function frame(now){
   const still=settings.motion==='still';
   if(now-lastT<1000/(still?4:settings.fps)-4) return;
   const dt=Math.min(.1,(now-lastT)/1000); lastT=now;
-  if(document.hidden||miniOn) return;
+  if(document.hidden||miniOn||!winShown) return;
   const k=still?0:settings.motion==='calm'?.45:1, vdt=dt*settings.vizSpeed*k;
   vizT+=vdt;
   Viz.analyse(still?null:analyser,zenData,actx?actx.sampleRate:48000,dt,
@@ -1242,12 +1567,28 @@ function init(){
       navigator.mediaSession.setActionHandler('nexttrack',()=>nextTrack(false));
     }catch{}
   }
-  if(winAPI&&winAPI.onMedia) winAPI.onMedia(act=>{ act==='next'?goNext():act==='pom'?pomStart():togglePlay(); });
+  if(winAPI&&winAPI.onMedia) winAPI.onMedia(act=>{ act==='next'?goNext():act==='pom'?pomStart():act==='pom-skip'?pomSkip():act==='pom-reset'?pomReset():togglePlay(); });
 
   // other apps' media; the bridge reports position only now and then, so tick the bar here
   if(winAPI&&winAPI.onSys) winAPI.onSys(onSys);
   if(winAPI&&winAPI.onLink) winAPI.onLink(onLink);
-  $('link-badge').onclick=()=>{ if(winAPI&&winAPI.linkCmd) winAPI.linkCmd('unlink'); setLinked(false); };
+  $('link-badge').onclick=()=>{
+    // an open session isn't a link to undo: the badge opens the pill's panel (or says where it ends)
+    if(isOpen()){ if(pillOn()) winAPI.pillCmd('panel'); else toast('Open session — rename it under the clock, end it with reset'); return; }
+    if(winAPI&&winAPI.linkCmd) winAPI.linkCmd('unlink'); setLinked(false);
+  };
+  // the pill: its settings in; the window says when it is out of sight (nothing to draw then)
+  if(winAPI&&winAPI.onPill){ bindPill(); winAPI.onPill(onPill); }
+  if(winAPI&&winAPI.onVis) winAPI.onVis(on=>{ winShown=!!on; });
+  // the timers: one dock, parked until main says they show here; main keeps the timers themselves
+  if(winAPI&&winAPI.onTimers&&window.TimersUI){
+    tmUI=TimersUI.create(document.createElement('div'),m=>winAPI.timersCmd(m));
+    $('tm-slot-park').appendChild(tmUI.el);
+    bindTimers();
+    winAPI.onTimers(onTimers);
+    new ResizeObserver(reportDock).observe($('tm-slot-min'));
+    new ResizeObserver(()=>{ if(miniOn) syncMini(); }).observe($('tm-slot-mini'));
+  }
   setInterval(()=>{ if(src==='sys'&&sys&&sys.playing) reflectTime(); },500);
 
   // noise generator
@@ -1286,10 +1627,17 @@ function init(){
   $('pom-sync').onclick=()=>setSetting('sync',!settings.sync);
   $('ts-btn').onclick=cycleTimer;
   document.querySelectorAll('[data-ph]').forEach(b=>{ b.onclick=()=>selectPhase(b.dataset.ph); });
-  $('intention').value=settings.intention||'';
-  $('intention').addEventListener('input',()=>{ settings.intention=$('intention').value; saveSettings(); });
+  reflectIntention();
+  if(winAPI&&winAPI.pillExt) winAPI.pillExt('intention',settings.intention||'');
+  $('intention').addEventListener('input',()=>{
+    const v=$('intention').value;
+    if(isOpen()){ link.name=v; showLinkApp(); clearTimeout(renameT); renameT=setTimeout(()=>winAPI.pillCmd('rename',{name:v}),400); return; }
+    settings.intention=v; saveSettings();
+    if(winAPI&&winAPI.pillExt) winAPI.pillExt('intention',v);
+  });
+  $('intention').addEventListener('blur',reflectIntention);
 
-  // keyboard: space play · P timer · F full screen · M minimal · B mini · V/T styles · , settings · Esc
+  // keyboard: space play · P timer · F full screen · M minimal · B mini · O pill · N new timer · V/T styles · , settings · Esc
   document.addEventListener('keydown',e=>{
     if(e.target.matches('input:not([type=range]),textarea,select,[contenteditable=true]')){
       if(e.key==='Escape'||e.key==='Enter') e.target.blur();
@@ -1299,10 +1647,12 @@ function init(){
     if(e.code==='Space'){ if(e.target.closest('button')) return; e.preventDefault(); togglePlay(); return; }
     if(e.key==='Escape'){ if(drawerOpen) closeDrawer(); else if(zenOn) exitZen(); return; }
     const k=e.key.toLowerCase();
-    if(miniOn&&k!=='b'&&k!=='p') return;
+    if(miniOn&&k!=='b'&&k!=='p'&&k!=='n') return;
     if(k==='f') zenOn?exitZen():enterZen();
     else if(k==='m') setMode(winMode==='minimal'?'standard':'minimal');
     else if(k==='b') miniOn?exitMini():enterMini();
+    else if(k==='o') togglePill();
+    else if(k==='n'){ e.preventDefault(); newTimer(); }
     else if(k==='v') cycleViz();
     else if(k==='t') cycleTimer();
     else if(k==='p') pomStart();
@@ -1310,6 +1660,9 @@ function init(){
   });
 
   applyModeClass(); reflectSide(); reflectTimerStyle(); setDrawerTab('look');
+  if(document.fonts) document.fonts.ready.then(measureLabels);
+  // (and again as one is pointed at: the link chip's name changes, and it is out of sight until linked)
+  document.querySelectorAll('.mode-btn,.link-badge').forEach(b=>b.addEventListener('pointerenter',()=>measureLabel(b.querySelector('span'))));
   reflectLoop(); reflectShuffle();
   loadPom(); renderPom(); reflectSettings();
   updateNP(); renderList();

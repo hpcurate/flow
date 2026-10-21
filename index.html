@@ -8,6 +8,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23060607'/%3E%3Ccircle cx='10.5' cy='10.5' r='5.5' fill='%23FF4F2E'/%3E%3Cpath d='M17 16V5a11 11 0 0 1 11 11z' fill='%23FFC23D'/%3E%3Crect x='5' y='17' width='11' height='11' rx='1.5' fill='%232F62FF'/%3E%3Cpath d='M17 17h11a5.5 5.5 0 0 1-11 0z' fill='%2314B8A0'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="stylesheet" href="flow.css">
+  <link rel="stylesheet" href="timers.css">
 </head>
 <body class="mode-standard" data-phase="focus">
 
@@ -25,6 +26,10 @@
       <button class="mode-btn" data-mode="minimal" title="Minimal view (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="7" y="3" width="10" height="18" rx="2.5"/></svg><span>Minimal</span></button>
       <button class="mode-btn" data-mode="standard" title="Standard view (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M14.5 5v14"/></svg><span>Standard</span></button>
       <button class="mode-btn" data-mode="fullscreen" title="Full screen (F)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg><span>Full screen</span></button>
+      <span class="modes-sep" aria-hidden="true"></span>
+      <button class="mode-btn pill-tog" id="pill-btn" title="Pill — a session bar on top of everything, alongside any view (O)" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2.5" y="8" width="19" height="8" rx="4"/><path d="M11 12h6.5"/><circle cx="7" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg><span>Pill</span><i class="tog" aria-hidden="true"></i></button>
+      <button class="mode-btn pill-tog" id="tm-btn" title="Timers — quick timers you name on the fly, in every view (N for a new one)" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10M7 21h10"/><path d="M8 3v3.2a4 4 0 0 0 1.4 3L12 12l2.6-2.8A4 4 0 0 0 16 6.2V3M8 21v-3.2a4 4 0 0 1 1.4-3L12 12l2.6 2.8a4 4 0 0 1 1.4 3V21"/></svg><span>Timers</span><i class="tog" aria-hidden="true"></i></button>
+      <button class="mode-btn tm-pop" id="tm-pop-btn" title="Pop the timers out into a small window of their own" aria-pressed="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-8 8"/><path d="M17 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h4"/></svg></button>
     </nav>
     <div class="win-ctl">
       <button class="wb" id="pin-btn" title="Keep on top" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16v5M8 3h8l-1.5 6L18 13H6l3.5-4z"/></svg></button>
@@ -89,6 +94,7 @@
       <div class="side-view" data-side-view="player">
         <section class="card np">
           <div class="cover art" id="cover"></div>
+          <button class="np-sys" data-toggle="sysMedia" title="Other apps (Spotify, YouTube…): show and visualise what they play here, or keep FLOW to its own library"><i></i><span>other apps</span></button>
           <div class="np-meta">
             <div class="np-title" id="np-title">Nothing playing</div>
             <div class="np-sub" id="np-sub">add music to begin</div>
@@ -133,11 +139,15 @@
         <div class="lib-list" id="pl-list"></div>
         <div class="lib-hint">Drag to reorder · the cup marks your break track</div>
       </div>
+      <!-- the timers (timers-ui.js): one dock, moved by app.js into the slot of the view on screen -->
+      <section class="tm-slot tm-slot-std" id="tm-slot-std"></section>
     </aside>
   </main>
+  <div class="tm-slot tm-slot-min" id="tm-slot-min"></div>
 
   <input type="file" id="file-input" accept="audio/*,.mp3,.m4a,.flac,.ogg,.wav" multiple>
 </div>
+<div class="tm-slot" id="tm-slot-park" hidden></div>
 
 <!-- ═══════════ MINI PLAYER ═══════════ -->
 <div class="mini" id="mini">
@@ -158,6 +168,7 @@
     <span class="mini-time" id="mini-time">25:00</span>
     <button class="mini-ctrl sm" id="mini-pom-toggle" title="Pause / resume timer"><svg id="mini-pom-ico" viewBox="0 0 24 24" fill="currentColor"></svg></button>
   </div>
+  <div class="tm-slot tm-slot-mini" id="tm-slot-mini"></div>
 </div>
 
 <!-- ═══════════ FULL SCREEN ═══════════ -->
@@ -191,6 +202,7 @@
         <div class="zen-tt" id="zen-tt">no track</div>
       </div>
     </div>
+    <div class="tm-slot tm-slot-zen" id="tm-slot-zen"></div>
     <div class="zen-ctrls">
       <button class="ctrl" id="zen-prev" title="Previous"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="6" width="2.4" height="12" rx="1"/><path d="M19 6.9v10.2a.9.9 0 0 1-1.4.74l-7.4-5.1a.9.9 0 0 1 0-1.48l7.4-5.1A.9.9 0 0 1 19 6.9z"/></svg></button>
       <button class="ctrl play" id="zen-play" title="Play / pause (Space)"><svg id="zen-play-ico" viewBox="0 0 24 24" fill="currentColor"></svg></button>
@@ -208,7 +220,7 @@
     <button class="wb" id="drawer-close" title="Close (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
   </div>
   <div class="seg dr-tabs" role="tablist">
-    <button data-tab="look">Look</button><button data-tab="timer">Timer</button><button data-tab="viz">Visualiser</button><button data-tab="window">Window</button>
+    <button data-tab="look">Look</button><button data-tab="timer">Timer</button><button data-tab="viz">Visualiser</button><button data-tab="window">Window</button><button data-tab="pill">Pill</button><button data-tab="timers">Timers</button>
   </div>
   <div class="dr-body">
 
@@ -325,6 +337,8 @@
           <button data-mode="standard"><svg viewBox="0 0 48 32"><rect x="5" y="5" width="25" height="22" rx="3" class="k3"/><rect x="32" y="5" width="11" height="22" rx="3" class="k5"/></svg><b>Standard</b><span>resizable, maximisable</span></button>
           <button data-mode="fullscreen"><svg viewBox="0 0 48 32"><rect x="3" y="3" width="42" height="26" rx="3" class="k1"/><circle cx="24" cy="16" r="7" class="k2"/></svg><b>Full screen</b><span>visualiser and clock</span></button>
         </div>
+        <button class="pill-card" id="pill-card"><svg viewBox="0 0 48 32"><rect x="4" y="11" width="40" height="10" rx="5" class="k0"/><circle cx="11" cy="16" r="2.4" class="k1"/><rect x="17" y="14" width="14" height="3" rx="1.5" class="k2"/><rect x="34" y="13.5" width="2" height="5" rx="1" class="k3"/><rect x="37.5" y="12" width="2" height="8" rx="1" class="k5"/></svg><span><b>Pill</b><span>a session bar on top of everything — on or off, alongside any view</span></span><i class="tog" aria-hidden="true"></i></button>
+        <button class="pill-card" id="tm-card"><svg viewBox="0 0 48 32"><rect x="4" y="5" width="40" height="9" rx="4.5" class="k0"/><rect x="7" y="7.5" width="9" height="4" rx="2" class="k2"/><rect x="19" y="8.5" width="15" height="2" rx="1" class="k2"/><rect x="4" y="18" width="40" height="9" rx="4.5" class="k0"/><rect x="7" y="20.5" width="12" height="4" rx="2" class="k5"/><rect x="22" y="21.5" width="8" height="2" rx="1" class="k5"/></svg><span><b>Timers</b><span>quick timers you name on the fly — in every view, or popped out on their own</span></span><i class="tog" aria-hidden="true"></i></button>
         <div class="hint">Minimal and standard each remember their own size and position.</div>
       </div>
       <div class="field row">
@@ -339,11 +353,155 @@
           <dt><kbd>F</kbd></dt><dd>Full screen</dd>
           <dt><kbd>M</kbd></dt><dd>Minimal ↔ standard</dd>
           <dt><kbd>B</kbd></dt><dd>Mini player</dd>
+          <dt><kbd>O</kbd></dt><dd>Pill on / off</dd>
+          <dt><kbd>N</kbd></dt><dd>A new timer</dd>
           <dt><kbd>V</kbd></dt><dd>Next visualiser style</dd>
           <dt><kbd>T</kbd></dt><dd>Next timer visual</dd>
           <dt><kbd>,</kbd></dt><dd>Settings</dd>
           <dt><kbd>Esc</kbd></dt><dd>Close settings / leave full screen</dd>
         </dl>
+      </div>
+    </section>
+
+    <section class="dr-pane" data-pane="pill">
+      <div class="field row">
+        <div class="lbl">Show the pill <span class="hint">a small session bar on top of everything: TUTOR's or GRIND's session, an open session or FLOW's timer, and the music. Drag it onto the taskbar; closing FLOW's window leaves it up.</span></div>
+        <button class="switch-btn" data-pill-toggle="on" aria-label="Show the pill"></button>
+      </div>
+      <div class="field">
+        <div class="lbl">Size</div>
+        <div class="opts" data-pill-set="size"><button data-v="s">Small</button><button data-v="m">Medium</button><button data-v="l">Large</button></div>
+      </div>
+      <div class="field">
+        <div class="lbl">Width and height <span class="hint">each size its own. What the pill shows follows its height, and the least important parts give way as it gets narrower</span></div>
+        <div class="pd-list" id="pill-dims"></div>
+      </div>
+      <div class="field sliders">
+        <label class="slider"><span class="lbl">Scale</span><input type="range" data-pill-range="scale" min="0.8" max="1.4" step="0.05"><span class="sv" data-pill-out="scale"></span></label>
+        <label class="slider"><span class="lbl">Opacity</span><input type="range" data-pill-range="opacity" min="0.4" max="1" step="0.05"><span class="sv" data-pill-out="opacity"></span></label>
+      </div>
+      <div class="field">
+        <div class="lbl">With nothing running <span class="hint">hidden: start a session from the tray or the shortcut</span></div>
+        <div class="opts" data-pill-set="idle"><button data-v="compact">Start button</button><button data-v="dot">Dot</button><button data-v="hide">Hidden</button></div>
+      </div>
+      <div class="field">
+        <div class="lbl">Colours <span class="hint">a linked app's own, or FLOW's palette</span></div>
+        <div class="opts" data-pill-set="colors"><button data-v="app">The app's</button><button data-v="flow">FLOW's</button></div>
+      </div>
+      <div class="field row">
+        <div class="lbl">Snap to the taskbar <span class="hint">it lies on the taskbar, and clicks into place beside the icons, before the tray or at the left edge</span></div>
+        <button class="switch-btn" data-pill-toggle="snap" aria-label="Snap to the taskbar"></button>
+      </div>
+      <div class="field row">
+        <div class="lbl">Lock position</div>
+        <button class="switch-btn" data-pill-toggle="lock" aria-label="Lock position"></button>
+      </div>
+      <div class="field row">
+        <div class="lbl">Click-through <span class="hint">clicks pass to whatever is under it; hold Ctrl to reach it</span></div>
+        <button class="switch-btn" data-pill-toggle="through" aria-label="Click-through"></button>
+      </div>
+      <div class="field row">
+        <div class="lbl">Hide over full-screen apps <span class="hint">games, videos, F11</span></div>
+        <button class="switch-btn" data-pill-toggle="fsHide" aria-label="Hide over full-screen apps"></button>
+      </div>
+      <div class="field row">
+        <div class="lbl">Music bars <span class="hint">four bars of whatever FLOW hears; hover them for the track, click to play or pause</span></div>
+        <button class="switch-btn" data-pill-toggle="viz" aria-label="Music bars"></button>
+      </div>
+      <div class="field row">
+        <div class="lbl">Moments <span class="hint">a colour wipe when a break starts or ends and when the goal is reached ("!" always shows when another app takes the clock)</span></div>
+        <button class="switch-btn" data-pill-toggle="moments" aria-label="Moments"></button>
+      </div>
+      <div class="field row">
+        <div class="lbl">Global shortcuts <span class="hint" id="pill-keys"></span></div>
+        <button class="switch-btn" data-pill-toggle="hotkeys" aria-label="Global shortcuts"></button>
+      </div>
+      <div class="field">
+        <div class="lbl">Open session <span class="hint">the session you start from the pill when it is not TUTOR or GRIND: a goal, and a break every so often. Name it in the pill, or here under the clock.</span></div>
+        <div class="steppers">
+          <div class="stepper" data-pill-step="goalMin" data-min="5" data-max="720" data-d="15"><span class="st-lbl">Goal</span><button data-s="-1" aria-label="Shorter goal">−</button><span class="st-val"></span><button data-s="1" aria-label="Longer goal">+</button></div>
+          <div class="stepper" data-pill-step="breakEvery" data-min="0" data-max="240" data-d="5" data-zero="never"><span class="st-lbl">Break every</span><button data-s="-1" aria-label="Breaks sooner">−</button><span class="st-val"></span><button data-s="1" aria-label="Breaks later">+</button></div>
+          <div class="stepper" data-pill-step="breakMin" data-min="1" data-max="120" data-d="1"><span class="st-lbl">Break length</span><button data-s="-1" aria-label="Shorter break">−</button><span class="st-val"></span><button data-s="1" aria-label="Longer break">+</button></div>
+        </div>
+        <div class="hint pill-today" id="pill-today"></div>
+        <div class="btn-row"><button class="pill-btn" id="pill-start">Start an open session</button><button class="pill-btn ghost" id="pill-reset-pos">Reset position</button></div>
+      </div>
+      <div class="field">
+        <div class="lbl">TUTOR and GRIND <span class="hint">where FLOW finds them when you link from the pill. Empty: each app's usual dist folder.</span></div>
+        <label class="path"><span>TUTOR</span><input type="text" data-pill-text="tutorExe" placeholder="github\tutor\dist\TUTOR-win32-x64\TUTOR.exe" spellcheck="false" autocomplete="off"></label>
+        <label class="path"><span>GRIND</span><input type="text" data-pill-text="grindExe" placeholder="github\grind\dist\GRIND-win32-x64\GRIND.exe" spellcheck="false" autocomplete="off"></label>
+      </div>
+    </section>
+
+    <section class="dr-pane" data-pane="timers">
+      <div class="field row">
+        <div class="lbl">Show the timers <span class="hint">quick timers you start on the fly: type "laundry 2h" and press Enter. They sit in every view — under the titlebar, under the minimal view, under the mini bar, in full screen. N starts a new one.</span></div>
+        <button class="switch-btn" data-tm-toggle="on" aria-label="Show the timers"></button>
+      </div>
+      <div class="field row">
+        <div class="lbl">Pop them out <span class="hint">a small window of their own, on top of everything, like the pill. Drag a timer to move it.</span></div>
+        <button class="switch-btn" data-tm-toggle="pop" aria-label="Pop the timers out"></button>
+      </div>
+      <div class="field row">
+        <div class="lbl">Beside the pill <span class="hint">popped out, they grow out of the pill's right end as capsules of its own. Drop the pop-out against the pill to dock it there; pull a timer away to undock.</span></div>
+        <button class="switch-btn" data-tm-toggle="dock" aria-label="Timers beside the pill"></button>
+      </div>
+      <div class="field">
+        <div class="lbl">Pop-out width</div>
+        <div class="opts" data-tm-set="popSize"><button data-v="s">Small</button><button data-v="m">Medium</button><button data-v="l">Large</button></div>
+      </div>
+      <div class="field sliders">
+        <label class="slider"><span class="lbl">Opacity</span><input type="range" data-tm-range="popOpacity" min="0.4" max="1" step="0.05"><span class="sv" data-tm-out="popOpacity"></span></label>
+        <div class="hint">The pop-out's, at rest; it comes up full when you point at it or one ends.</div>
+      </div>
+      <div class="field row">
+        <div class="lbl">Keep the pop-out on top</div>
+        <button class="switch-btn" data-tm-toggle="popTop" aria-label="Keep the pop-out on top"></button>
+      </div>
+      <div class="field">
+        <div class="lbl">The bar</div>
+        <div class="opts" data-tm-set="bar"><button data-v="fill">Fills up</button><button data-v="drain">Drains</button></div>
+      </div>
+      <div class="field row">
+        <div class="lbl">Show the time left</div>
+        <button class="switch-btn" data-tm-toggle="showLeft" aria-label="Show the time left"></button>
+      </div>
+      <div class="field">
+        <div class="lbl">Order</div>
+        <div class="opts" data-tm-set="order"><button data-v="added">As added</button><button data-v="soon">Soonest first</button></div>
+      </div>
+      <div class="field">
+        <div class="lbl">When one ends <span class="hint">the overlay pops on the screen your mouse is on</span></div>
+        <div class="opts" data-tm-set="overlay"><button data-v="big">Big pop</button><button data-v="small">Small pop</button><button data-v="off">No pop</button></div>
+      </div>
+      <div class="field row">
+        <div class="lbl">Keep it on screen <span class="hint">after the pop, a banner stays at the top until you answer it: ok, 5 more minutes, or the same again</span></div>
+        <button class="switch-btn" data-tm-toggle="stay" aria-label="Keep it on screen"></button>
+      </div>
+      <div class="field">
+        <div class="lbl">Sound</div>
+        <div class="opts" data-tm-set="sound"><button data-v="chime">Bell</button><button data-v="ring">Ring until dismissed</button><button data-v="off">None</button></div>
+      </div>
+      <div class="field row">
+        <div class="lbl">Windows notification <span class="hint">it waits in the notification centre if you were away</span></div>
+        <button class="switch-btn" data-tm-toggle="notify" aria-label="Windows notification"></button>
+      </div>
+      <div class="field">
+        <div class="lbl">Ding every <span class="hint">while a new timer runs: a soft note and a bubble over it every so often (30s · 5m · 1h). Empty = never; a timer's own is in its edit form</span></div>
+        <label class="path"><span>EVERY</span><input type="text" data-tm-text="every" placeholder="never · 5m" spellcheck="false" autocomplete="off"></label>
+      </div>
+      <div class="field">
+        <div class="lbl">Quick lengths <span class="hint">the chips under the new-timer field</span></div>
+        <label class="path"><span>CHIPS</span><input type="text" data-tm-text="presets" placeholder="5m 10m 25m 1h 2h" spellcheck="false" autocomplete="off"></label>
+      </div>
+      <div class="field row">
+        <div class="lbl">Global shortcut <span class="hint">Ctrl+Alt+Shift+N opens a new timer from anywhere</span></div>
+        <button class="switch-btn" data-tm-toggle="hotkey" aria-label="Global shortcut"></button>
+      </div>
+      <div class="field">
+        <div class="lbl">Remembered names <span class="hint">what the new-timer field suggests as you type, each with the colour and length it had last</span></div>
+        <div class="tm-names" id="tm-names"></div>
+        <div class="btn-row"><button class="pill-btn ghost" id="tm-forget-all">Forget them all</button></div>
       </div>
     </section>
   </div>
@@ -354,6 +512,7 @@
 <div class="toast" id="toast" role="status"></div>
 
 <script src="viz.js"></script>
+<script src="timers-ui.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
