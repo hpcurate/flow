@@ -240,6 +240,19 @@ module.exports = function createPill({ getWin, link, linkSend, linkToRenderer, s
     return out.filter(b => b.width > b.height);     // the pill only lies along a horizontal taskbar
   }
   function displayFor(id) { return screen.getAllDisplays().find(d => d.id === id) || screen.getPrimaryDisplay(); }
+  /* the screen the pill was left on (Hugo, 2026-10-22: "pill needs to remember where the pill was"): Windows can
+     hand a monitor a new id (a restart, a cable, the monitors waking up), and the pill then fell back to the main
+     one. So: the id, else the monitor with the same bounds (kept since 1.4.0, `db`), else the one under its point. */
+  const sameRect = (B, a) => Array.isArray(a) && B.x === a[0] && B.y === a[1] && B.width === a[2] && B.height === a[3];
+  function homeDisplay(p) {
+    const all = screen.getAllDisplays();
+    const d = all.find(x => x.id === p.disp) || all.find(x => sameRect(x.bounds, p.db))
+      || (!p.snapped && Number.isFinite(p.cx) && Number.isFinite(p.cy) ? screen.getDisplayNearestPoint({ x: Math.round(p.cx), y: Math.round(p.cy) }) : null);
+    if (!d) return screen.getPrimaryDisplay();
+    if (d.id !== p.disp && D.pos === p) { D.pos = { ...p, disp: d.id }; save(); }   // found under its new id: keep that one
+    return d;
+  }
+  const dbOf = d => [d.bounds.x, d.bounds.y, d.bounds.width, d.bounds.height];
   function barOn(d) {
     const B = d.bounds;
     return bars().find(b => b.x < B.x + B.width && b.x + b.width > B.x && b.y < B.y + B.height && b.y + b.height > B.y) || null;
@@ -257,14 +270,14 @@ module.exports = function createPill({ getWin, link, linkSend, linkToRenderer, s
   const spotLeft = (at, w) => at.a === 'l' ? at.x : at.x - w;
   function defaultPos() {
     const d = screen.getPrimaryDisplay(), bar = barOn(d);
-    return { disp: d.id, snapped: !!bar, spot: bar ? 'iconsL' : null,
+    return { disp: d.id, db: dbOf(d), snapped: !!bar, spot: bar ? 'iconsL' : null,
              cx: bar ? bar.x + bar.width * .3 : d.workArea.x + d.workArea.width / 2, cy: bar ? null : d.workArea.y + d.workArea.height - 60 };
   }
   // the group's width at rest: the pill, and the timers docked beside it
   function groupW(sz) { return sz.w + (dockedT() && tdockW ? Math.round((GAP + tdockW) * D.cfg.scale) : 0); }
   function pillRect(sz, G = sz.w) {
     if (!D.pos) D.pos = defaultPos();
-    const p = D.pos, d = displayFor(p.disp), bar = p.snapped && D.cfg.snap ? barOn(d) : null;
+    const p = D.pos, d = homeDisplay(p), bar = p.snapped && D.cfg.snap ? barOn(d) : null;
     let x, y, anchor = 'l';
     if (bar) {
       y = Math.round(bar.y + (bar.height - sz.h) / 2);
@@ -402,7 +415,7 @@ module.exports = function createPill({ getWin, link, linkSend, linkToRenderer, s
       snapped = true; y = Math.round(bar.y + (bar.height - h) / 2);
       for (const [k, at] of Object.entries(spotsFor(bar))) { const l = spotLeft(at, g); if (Math.abs(l - x) < 26) { x = Math.round(l); spot = k; break; } }
     }
-    drag.now = { disp: d.id, snapped, spot, cx: x + w / 2, cy: y + h / 2 };
+    drag.now = { disp: d.id, db: dbOf(d), snapped, spot, cx: x + w / 2, cy: y + h / 2 };
     pw.setPosition(x - drag.off.x, y - drag.off.y); boundsKey = '';
     send('pill:drag', { snapped, spot });
   }
@@ -604,7 +617,7 @@ module.exports = function createPill({ getWin, link, linkSend, linkToRenderer, s
     if (k === 'on' && !D.cfg.on) panel = null;
     if (k === 'snap' && D.cfg.snap && D.pos && !D.pos.snapped) {
       // switched back on: drop onto the taskbar of the screen it is on
-      const d = displayFor(D.pos.disp);
+      const d = homeDisplay(D.pos);
       if (barOn(d)) D.pos = { ...D.pos, snapped: true, spot: null };
     }
     push();
@@ -727,6 +740,6 @@ module.exports = function createPill({ getWin, link, linkSend, linkToRenderer, s
       ];
     },
     _test: { D, H, get rect() { return rect; }, get tdockW() { return tdockW; }, get shown() { return shown; }, get panel() { return panel; }, get win() { return pw; }, get ignoring() { return ignoring; },
-             get spots() { return spotsPx; }, bars, spotsFor, pillSize, compose, launch, O, dragStart, dragMove, dragEnd, setPanel, onBridge, push, set },
+             get spots() { return spotsPx; }, bars, spotsFor, pillSize, compose, launch, O, dragStart, dragMove, dragEnd, setPanel, onBridge, push, set, place, homeDisplay },
   };
 };

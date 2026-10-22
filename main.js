@@ -38,6 +38,8 @@ if (!primary) app.quit();
 app.on('second-instance', (_e, argv) => {
   // another app adding a timer (CORE's "how long?"): FLOW's window stays where it is
   if (timers && timers.fromArgs(argv)) return;
+  // CORE's view menu: that view, where it was last (below)
+  if (viewFromArgs(argv)) return;
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.show(); win.focus();
@@ -60,19 +62,39 @@ function saveState() {
   try { fs.writeFileSync(STATE_FILE, JSON.stringify(state)); } catch {}
 }
 
-function onScreen(b) {
-  return screen.getAllDisplays().some(({ workArea: r }) =>
-    b.x >= r.x - 10 && b.y >= r.y - 10 && b.x + b.width <= r.x + r.width + 10 && b.y + b.height <= r.y + r.height + 10);
+/* where a saved rect belongs: the display holding most of it, by the display's bounds — not its work area.
+   CORE's bar keeps the top of Hugo's top monitor as an AppBar (240 px, or 56 for its minimal bar), so a FLOW
+   saved under the minimal bar used to count as off screen while the bar was up, and came back in the middle
+   of the main monitor (Hugo, 2026-10-22: "flow remembers window position of both pill and main window … it
+   needs to function independently of the layouts"). */
+function homeOf(b) {
+  let best = null, most = 0;
+  for (const d of screen.getAllDisplays()) {
+    const B = d.bounds;
+    const w = Math.min(b.x + b.width, B.x + B.width) - Math.max(b.x, B.x), h = Math.min(b.y + b.height, B.y + B.height) - Math.max(b.y, B.y);
+    if (w > 0 && h > 0 && w * h > most) { most = w * h; best = d; }
+  }
+  // a quarter of it (or a good handful of pixels) still on a screen: it stays there
+  return best && most >= Math.min(b.width * b.height / 4, 6400) ? best : null;
 }
-// saved bounds for a view if they still fit a screen; otherwise keep the current
-// top-right corner (where the view buttons are), or centre on first launch
+// into a work area: moved first, made smaller only when it has to be
+function fitIn(b, area) {
+  const width = Math.min(b.width, area.width), height = Math.min(b.height, area.height);
+  return { x: Math.min(Math.max(b.x, area.x), area.x + area.width - width), y: Math.min(Math.max(b.y, area.y), area.y + area.height - height), width, height };
+}
+// saved bounds for a view, on the screen they were on (below anything that keeps its top); a view never
+// saved keeps the current top-right corner (where the view buttons are), or centres on first launch
 function boundsFor(mode, anchor) {
   const def = MODES[mode], saved = state.bounds[mode] || {};
+  if (Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+    const s = { x: saved.x, y: saved.y, width: Math.max(saved.width || def.width, def.minWidth), height: Math.max(saved.height || def.height, def.minHeight) };
+    const home = homeOf(s);
+    if (home) return fitIn(s, home.workArea);
+  }
   const area = (anchor ? screen.getDisplayMatching(anchor) : screen.getPrimaryDisplay()).workArea;
   const width = Math.min(Math.max(saved.width || def.width, def.minWidth), area.width);
   const height = Math.min(Math.max(saved.height || def.height, def.minHeight), area.height);
-  const b = { x: saved.x, y: saved.y, width, height };
-  if (Number.isFinite(b.x) && Number.isFinite(b.y) && onScreen(b)) return b;
+  const b = { x: 0, y: 0, width, height };
   b.x = anchor ? anchor.x + anchor.width - width : area.x + Math.round((area.width - width) / 2);
   b.y = anchor ? anchor.y : area.y + Math.round((area.height - height) / 2);
   b.x = Math.min(Math.max(b.x, area.x), area.x + area.width - width);
@@ -151,7 +173,8 @@ function setMini(mini, width, height) {
     inMini = true; dock.on = 0;
     const saved = state.bounds.mini, at = win.getBounds();
     b = { x: at.x + at.width - width, y: at.y, width, height };
-    if (saved && onScreen({ x: saved.x, y: saved.y, width, height })) b = { x: saved.x, y: saved.y, width, height };
+    const s = saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) ? { x: saved.x, y: saved.y, width, height } : null, home = s && homeOf(s);
+    if (home) b = fitIn(s, home.workArea);
   }
   win.setMinimumSize(1, 1);
   win.setResizable(true);
@@ -205,20 +228,67 @@ function createWindow() {
   win.on('enter-full-screen', () => win.webContents.send('win:fs', true));
   win.on('leave-full-screen', () => {
     win.setFullScreenable(false);
+    // the monitor's top was just taken (CORE's bar came up): full screen below it now, still in the full screen view
+    if (fsSwitch) {
+      fsSwitch = false;
+      setTimeout(() => { if (win && !win.isDestroyed() && fsRestore) enterSoft(screen.getDisplayMatching(win.getBounds())); }, 50);
+      return;
+    }
     win.webContents.send('win:fs', false);
     // Windows finishes the fullscreen transition AFTER this event and stomps any
     // bounds set synchronously here — restore on the next tick instead
     const r = fsRestore;
-    setTimeout(() => {
-      if (!win || win.isDestroyed()) return;
-      if (r) { win.setBounds(r.bounds); if (r.maximized) win.maximize(); }
-      win.setResizable(!inMini);
-      win.setAlwaysOnTop(inMini || (state.mode === 'minimal' && state.onTop), 'floating');
-      fsRestore = null;
-      const p = pending; pending = null;
-      if (p) p(); else applyDock();
-    }, 50);
+    setTimeout(() => afterFs(r), 50);
   });
+}
+// back from either full screen: the bounds it had, its view's limits, what waited for it
+function afterFs(r) {
+  if (!win || win.isDestroyed()) return;
+  if (r) { win.setBounds(r.bounds); if (r.maximized) win.maximize(); }
+  if (!inMini) win.setMinimumSize(...minFor(state.mode, win.getBounds()));
+  win.setResizable(!inMini);
+  win.setAlwaysOnTop(inMini || (state.mode === 'minimal' && state.onTop), 'floating');
+  fsRestore = null;
+  const p = pending; pending = null;
+  if (p) p(); else applyDock();
+}
+
+/* ── Full screen below a bar (Hugo, 2026-10-22: "top monitor fix — when i select the full screen view of flow,
+   it goes under the bar, i would like the full screen view of flow in the top monitor to exclude the area of
+   the core bar / mini view") ──
+   CORE's bar and minimal bar keep the top of their monitor as an AppBar, so that monitor's work area starts
+   below them. There FLOW's full screen is the monitor minus that band: a plain window filling the rest, which
+   follows the band when it changes (bar ⇄ minimal bar, folded to its line, given back). A monitor whose top is
+   free (the main one: its taskbar is at the bottom) gets Windows' own full screen, as before. */
+let fsSoft = false;     // full screen as a window below the band
+let fsSwitch = false;   // in Windows' full screen when a band appeared: leaving it turns into fsSoft
+let fsTarget = null;    // the display a full screen asked for from outside goes to (the last one used)
+const topBand = d => Math.max(0, d.workArea.y - d.bounds.y);
+const softRect = d => ({ x: d.bounds.x, y: d.workArea.y, width: d.bounds.width, height: d.bounds.y + d.bounds.height - d.workArea.y });
+function enterSoft(d) {
+  fsSoft = true;
+  if (win.isMaximized()) win.unmaximize();
+  win.setAlwaysOnTop(false);
+  win.setMaximizable(false);
+  win.setMinimumSize(1, 1);
+  win.setResizable(true);
+  win.setBounds(softRect(d));
+  win.setResizable(false);
+  win.webContents.send('win:fs', true);
+}
+function leaveSoft() {
+  fsSoft = false;
+  win.webContents.send('win:fs', false);
+  win.setMaximizable(state.mode === 'standard');
+  const r = fsRestore;
+  setTimeout(() => afterFs(r), 50);
+}
+// the band changed under FLOW's full screen: follow it (or, in Windows' own full screen, step below the new band)
+function fsFollow() {
+  if (!win || win.isDestroyed() || !fsRestore) return;
+  const d = screen.getDisplayMatching(win.getBounds());
+  if (fsSoft) { const r = softRect(d), b = win.getBounds(); if (r.x !== b.x || r.y !== b.y || r.width !== b.width || r.height !== b.height) { win.setResizable(true); win.setBounds(r); win.setResizable(false); } }
+  else if (win.isFullScreen() && topBand(d) && !fsSwitch) { fsSwitch = true; win.setFullScreen(false); }
 }
 
 /* ── The icon wears the theme ──
@@ -479,12 +549,17 @@ app.whenReady().then(() => {
   });
   createWindow();
   createTray();
+  // a band at the top of a monitor came, went or changed (CORE's bar): a full screen below it follows
+  screen.on('display-metrics-changed', fsFollow);
+  screen.on('display-removed', fsFollow);
   // the timers can dock beside the pill: each hears when the other changes
   pill = createPill({ getWin: () => win, link, linkSend, linkToRenderer, showFlow, getTimers: () => timers,
     onChange: () => { trayMenu(); if (timers) timers.pillChanged(); } });
   timers = createTimers({ getWin: () => win, showFlow, getPill: () => pill, onChange: trayMenu });
   // started by another app for a timer (--flow-timer=…): it is added once the timers are up
   setTimeout(() => timers.fromArgs(process.argv), 300);
+  // started by CORE's view menu (--flow-view=…): that view once the page is up
+  if (viewArg(process.argv)) win.webContents.once('did-finish-load', () => setTimeout(() => viewFromArgs(process.argv), 300));
   trayMenu();
   shownIcon = iconFile();
   queueShortcuts();   // catches a shortcut or pin made since the theme last changed
@@ -537,14 +612,54 @@ ipcMain.on('win:fullscreen', (e, { on }) => {
   if (!win) return;
   if (on) {
     if (win.isFullScreen() || fsRestore) return;
+    // its monitor: the one CORE's view menu asked for (the last full screen), else the one it is on
+    const d = fsTarget || screen.getDisplayMatching(win.getBounds());
+    fsTarget = null;
     fsRestore = { bounds: win.getNormalBounds(), maximized: win.isMaximized() };
+    state.fsAt = { x: d.bounds.x + Math.round(d.bounds.width / 2), y: d.bounds.y + Math.round(d.bounds.height / 2) };
+    saveState();
+    if (topBand(d)) { enterSoft(d); return; }
+    if (screen.getDisplayMatching(win.getBounds()).id !== d.id) {
+      // to that monitor first: Windows makes a window full screen on the monitor it is on
+      if (win.isMaximized()) win.unmaximize();
+      const b = win.getBounds();
+      win.setBounds(fitIn({ ...b, x: d.workArea.x + Math.round((d.workArea.width - b.width) / 2), y: d.workArea.y + Math.round((d.workArea.height - b.height) / 2) }, d.workArea));
+    }
     win.setAlwaysOnTop(false);
     win.setResizable(true);
     win.setFullScreenable(true);
     win.setFullScreen(true);
+  } else if (fsSoft) {
+    leaveSoft();
   } else if (win.isFullScreen()) {
     win.setFullScreen(false); // 'leave-full-screen' handler restores and re-locks the window
   }
 });
 
-module.exports = { restyleShortcuts, get pill() { return pill; }, get timers() { return timers; }, dock };   // for test/visual.cjs
+/* ── A view asked for from outside (Hugo, 2026-10-22: "if i right click on flow i can select view modes for
+   the app (and each one opens at the last position)") ──
+   CORE's launcher starts FLOW.exe --flow-view=<standard|minimal|mini|fullscreen|pill>: FLOW is single-instance,
+   so a running FLOW hears it as a second instance. The window opens in that view where the view was last
+   (win-state.json keeps each view's place; full screen goes to the last monitor it was used on); "pill"
+   shows the pill, or hides it when it is up. The page switches the view itself (win:view), as its own
+   buttons do. */
+const FLOW_VIEWS = ['standard', 'minimal', 'mini', 'fullscreen', 'pill'];
+function viewArg(argv) {
+  const a = (argv || []).map(String).find(x => x.toLowerCase().startsWith('--flow-view='));
+  const v = a ? a.slice(a.indexOf('=') + 1).replace(/^"|"$/g, '').toLowerCase() : null;
+  return FLOW_VIEWS.includes(v) ? v : null;
+}
+function viewFromArgs(argv) {
+  const v = viewArg(argv);
+  if (!v || !win || win.isDestroyed()) return !!v;
+  if (v === 'pill') { if (pill) pill.set('on', !pill.isOn()); return true; }
+  if (v === 'fullscreen' && state.fsAt) fsTarget = screen.getDisplayNearestPoint(state.fsAt);
+  if (win.isMinimized()) win.restore();
+  win.show(); win.focus();
+  const send = () => { if (win && !win.isDestroyed()) win.webContents.send('win:view', v); };
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => setTimeout(send, 150)); else send();
+  return true;
+}
+
+module.exports = { restyleShortcuts, get pill() { return pill; }, get timers() { return timers; }, dock,   // for test/visual.cjs
+  homeOf, fitIn, boundsFor, viewArg, viewFromArgs, softRect, topBand, get fsSoft() { return fsSoft; }, get state() { return state; } };

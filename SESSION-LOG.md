@@ -890,6 +890,54 @@ FLOW's PowerShell helpers, as % of the whole CPU (Task Manager's figure, 12 thre
 cover turns while music plays and holds still when it stops. `npm run perf` before / after, as in
 the table. Packed (`loopFps`, `spinArt`, `restSlow` in the asar, no `animation:spin 26s`).
 
+## 2026-10-22 — positions that stay, full screen below CORE's bar, views from CORE (1.4.0)
+
+Three of Hugo's prompter requests (log `updates/26-10-22_update_v1.4.0.md`):
+- `r261022-z257` "flow remembers window position of both pill and main window — pill needs to
+  remember where the pill was and where the main window was. it needs to function independently of
+  the layouts."
+- `r261022-7fzl` "top monitor fix — in my top monitor, when i select the full screen view of flow,
+  it goes under the bar, i would like the full screen view of flow in the top monitor to exclude the
+  area of the core bar / mini view."
+- FLOW's half of CORE's `r261022-ec85`: "if i right click on flow i can select view modes for the
+  app (and each one opens at the last position)".
+
+**Why the window moved.** `win-state.json` held the right place, but `boundsFor` only kept it when
+it fitted a monitor's *work area*. CORE's bar is an AppBar: it takes the top 240 px (56 for the
+minimal bar) out of its monitor's work area. Hugo's standard view was saved at y = −1376, just under
+the minimal bar on the top monitor. With the bigger bar up, that counted as off screen, and FLOW came
+back in the middle of the main monitor; a CORE layout was the only thing putting it back. Now
+`homeOf` finds the monitor holding most of the saved rect (by its bounds) and `fitIn` moves it into
+that monitor's work area, shrinking only if it has to. The mini view does the same.
+**The pill** was found by its display id only; Windows can renumber a monitor (a restart, a cable),
+and the pill then went to the main one. `pos.db` now keeps the monitor's bounds too: the id, else
+the same bounds, else its own point (older `pill.json`), else the main monitor.
+
+**Full screen below the bar.** On a monitor whose work area starts lower than its top (`topBand`),
+full screen is now a plain window over the monitor minus that band (`enterSoft` / `leaveSoft`,
+`fsSoft`). The renderer is in its full-screen view as before. `display-metrics-changed` makes it
+follow the band (bar → minimal bar → line → gone). Already in Windows' full screen when a band
+appears: it leaves it and continues below the band (`fsSwitch`). A monitor with a free top (the main
+one: its taskbar is at the bottom) still gets Windows' own full screen. The leave path is shared
+(`afterFs`).
+
+**Views from outside.** `--flow-view=` is read on a second instance (CORE runs `FLOW.exe
+--flow-view=mini`) and at start; main shows the window and sends `win:view`, and the page switches
+the way its own buttons do (`setMode`), so each view opens where it was last. `fullscreen` goes to
+the monitor full screen was last used on (`state.fsAt`); `pill` toggles the pill.
+
+**Verified:** `npm run test:ui` passes. New checks, with the screens faked (`screen`'s functions,
+put back after): Hugo's own saved rect comes back on the top monitor under a 240 px bar; a clean
+rect stays exactly; a monitor that's gone lands on the main one. The pill finds its monitor under a
+new id by bounds and by point. Full screen with a 120 px band is 120 px lower and follows the band
+to 56 px, then comes back where it was (`shot-11-fs-below-bar`). `second-instance` with
+`--flow-view=minimal|mini|standard|pill`. The older full-screen checks now accept either kind:
+Hugo's CORE bar sits on the main monitor today, so the test window's own full screen is the soft
+one. A free-top full screen is not forced in the test: it would make his real CORE bar step aside.
+The timers' pop-out drag check now allows a work area that starts below the top. Packed via a side
+folder (the dist folder was locked), asar copied over; `homeOf`, `softRect`, `homeDisplay`,
+`onView` in it.
+
 ## Open follow-ups
 - The visualiser was tuned on a generated loop. Real tracks may want a different default
   sensitivity (Settings → Visualiser → Sensitivity).

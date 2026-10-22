@@ -144,20 +144,22 @@ app.whenReady().then(async()=>{
     await run(`setMode('standard');pomStart();0`); await pause(800);
     assert.deepEqual(win.getBounds(),initial,'standard restores its own bounds');
 
-    // full screen, every visualiser on real audio
+    // full screen, every visualiser on real audio. Since 1.4.0 a monitor whose top is kept (CORE's bar, as an AppBar)
+    // gets a full screen below it, a plain window (fsSoft); a free top gets Windows' own: either is "in full screen"
+    const MF=require('../main.js'), fsIn=()=>win.isFullScreen()||MF.fsSoft;
     await run(`enterZen();0`); await pause(1500);
-    assert(win.isFullScreen());
+    assert(fsIn());
     for(const s of ['bauhaus','orbit','monolith','strata','burst','float']){ await run(`setSetting('vizStyle','${s}');0`); await pause(1300); await shot('9-fs-'+s); }
     await run(`setSetting('fsContent','timer');setSetting('timerStyle','eclipse');0`); await pause(800); await shot('9-fs-timer-eclipse');
     await run(`setSetting('timerStyle','mosaic');0`); await pause(600); await shot('9-fs-timer-mosaic');
     await run(`setSetting('fsContent','music');setSetting('timerStyle','orbit');setSetting('vizStyle','bauhaus');openDrawer('viz');0`); await pause(700); await shot('9-fs-settings');
     await run(`closeDrawer();exitZen();0`); await pause(1200);
-    assert(!win.isFullScreen()); assert.deepEqual(win.getBounds(),initial,'full screen restores the window');
+    assert(!fsIn()); assert.deepEqual(win.getBounds(),initial,'full screen restores the window');
 
     // a view change requested mid-full-screen is replayed once it has left
-    await run(`enterZen();0`); await pause(1400); assert(win.isFullScreen());
+    await run(`enterZen();0`); await pause(1400); assert(fsIn());
     await run(`setMode('minimal');0`); await pause(1500);
-    b=win.getBounds(); assert(!win.isFullScreen()); assert.equal(b.width,400); assert.equal(b.height,660);
+    b=win.getBounds(); assert(!fsIn()); assert.equal(b.width,400); assert.equal(b.height,660);
     await run(`setMode('standard');0`); await pause(800); assert.deepEqual(win.getBounds(),initial);
 
     // standard view at its minimum and at a big size
@@ -591,7 +593,9 @@ app.whenReady().then(async()=>{
     assert(Math.abs(qb.y+qb.height-bottom)<=1,'grew upward, its bottom stays');
     // dragged up the screen, it is anchored by its top from then on
     TM.popDrag({phase:'start',x:qb.x+40,y:qb.y+20}); TM.popDrag({phase:'move',x:qb.x+40,y:qb.y-880}); TM.popDrag({phase:'end'}); await pause(300);
-    assert(TM.D.pos&&TM.D.pos.anchor==='top'&&Math.abs(TM.pop.getBounds().y-(qb.y-900))<=2,'moved: '+JSON.stringify({pos:TM.D.pos,b:TM.pop.getBounds(),qb}));
+    // (to where it was let go, or as high as the work area allows: a bar kept at the top of this monitor, CORE's, stops it lower)
+    const popWa=screen.getDisplayMatching(qb).workArea;
+    assert(TM.D.pos&&TM.D.pos.anchor==='top'&&TM.pop.getBounds().y<=Math.max(qb.y-900,popWa.y)+12&&TM.pop.getBounds().y<qb.y-300,'moved: '+JSON.stringify({pos:TM.D.pos,b:TM.pop.getBounds(),qb,popWa}));
 
     // the pill grows to make room for its controls, rather than keeping room for them
     M.pill.set('on',true); M.pill.set('size','m'); await until(()=>P.shown&&P.win,'the pill again'); await pause(500);
@@ -801,6 +805,68 @@ app.whenReady().then(async()=>{
     const held=await run(`document.querySelector('#spin-probe .sp').style.transform`); await pause(400);
     assert.equal(await run(`document.querySelector('#spin-probe .sp').style.transform`),held,'paused: they hold still');
     await run(`document.getElementById('spin-probe').remove();delete document.hasFocus;reflectPlayState();0`);
+
+    // ── 1.4.0 (Hugo, 2026-10-22) ── the screens are faked here (screen's own functions, put back after), so this
+    // never depends on the monitors of the PC it runs on
+    {
+      const real={all:screen.getAllDisplays,match:screen.getDisplayMatching,near:screen.getDisplayNearestPoint,prim:screen.getPrimaryDisplay};
+      const fake=list=>{ screen.getAllDisplays=()=>list; screen.getPrimaryDisplay=()=>list[0]; screen.getDisplayMatching=r=>list.find(d=>r.x+r.width/2>=d.bounds.x&&r.x+r.width/2<d.bounds.x+d.bounds.width&&r.y+r.height/2>=d.bounds.y&&r.y+r.height/2<d.bounds.y+d.bounds.height)||list[0]; screen.getDisplayNearestPoint=p=>screen.getDisplayMatching({x:p.x,y:p.y,width:0,height:0}); };
+      const unfake=()=>{ screen.getAllDisplays=real.all; screen.getDisplayMatching=real.match; screen.getDisplayNearestPoint=real.near; screen.getPrimaryDisplay=real.prim; };
+      try{
+        // "flow remembers window position": Hugo's top monitor with CORE's 240 px bar kept at its top (an AppBar).
+        // A window saved under the minimal bar (56 px) is on that monitor, moved below the bar — never sent to the main one
+        const main={id:1,bounds:{x:0,y:0,width:3440,height:1440},workArea:{x:0,y:0,width:3440,height:1392}};
+        const top={id:2,bounds:{x:551,y:-1440,width:2560,height:1440},workArea:{x:551,y:-1200,width:2560,height:1200}};
+        fake([main,top]);
+        const keep=JSON.parse(JSON.stringify(M.state.bounds));
+        M.state.bounds.standard={x:563,y:-1376,width:2557,height:1226};
+        // (Hugo's own numbers: 9 px past the right edge too, so it comes 9 px left)
+        assert.deepEqual(M.boundsFor('standard'),{x:554,y:-1200,width:2557,height:1200},'saved under the bar: same monitor, just below the bar');
+        M.state.bounds.standard={x:900,y:-1000,width:1200,height:800};
+        assert.deepEqual(M.boundsFor('standard'),{x:900,y:-1000,width:1200,height:800},'saved clear of the bar: exactly where it was');
+        M.state.bounds.standard={x:5000,y:3000,width:1200,height:800};
+        const away=M.boundsFor('standard'); assert(away.x>=0&&away.y>=0&&away.x+away.width<=3440,'a monitor that is gone: back on the main one '+JSON.stringify(away));
+        M.state.bounds=keep;
+        // the pill: its monitor by id, else by its bounds (a new id after a restart), else by its point
+        const pillPos=P.D.pos;
+        P.D.pos={disp:999,db:[551,-1440,2560,1440],snapped:true,spot:null,cx:1500,cy:-700};
+        assert.equal(P.homeDisplay(P.D.pos).id,2,'the pill stays on its monitor under a new id (found by its bounds)'); assert.equal(P.D.pos.disp,2,'and keeps the new id');
+        P.D.pos={disp:998,snapped:false,cx:1500,cy:-700};
+        assert.equal(P.homeDisplay(P.D.pos).id,2,'no bounds kept (an older pill.json): found by its point');
+        P.D.pos={disp:997,snapped:true,cx:1500,cy:-700};
+        assert.equal(P.homeDisplay(P.D.pos).id,1,'nothing to go by: the main monitor, as before');
+        P.D.pos=pillPos;
+        unfake();
+        // "top monitor fix": full screen on a monitor whose top is kept (CORE's bar) fills the monitor below it
+        const r=screen.getDisplayMatching(win.getBounds()), band={...r,workArea:{...r.workArea,y:r.bounds.y+120,height:r.bounds.height-120}};
+        screen.getDisplayMatching=()=>band; screen.getAllDisplays=()=>[band]; screen.getDisplayNearestPoint=()=>band;
+        await run(`enterZen();0`); await pause(1200);
+        assert(!win.isFullScreen()&&M.fsSoft,'below a bar: not Windows\' full screen');
+        assert.deepEqual(win.getBounds(),{x:r.bounds.x,y:r.bounds.y+120,width:r.bounds.width,height:r.bounds.height-120},'the monitor minus the bar');
+        assert.equal(await run('zenOn'),true,'in the full screen view');
+        await shot('11-fs-below-bar');
+        band.workArea={...band.workArea,y:r.bounds.y+56,height:r.bounds.height-56};   // the bar became the minimal bar
+        screen.emit('display-metrics-changed',{},band,['workArea']); await pause(300);
+        assert.equal(win.getBounds().y,r.bounds.y+56,'it follows the band');
+        await run(`exitZen();0`); await pause(900);
+        assert(!M.fsSoft); assert.equal(await run('zenOn'),false); assert.deepEqual(win.getBounds(),initial,'and comes back where it was');
+        // (a free top, Windows' own full screen, is the check above when the test's monitor has no bar on it — never
+        // forced here: on a PC whose CORE bar sits on that monitor, a real full screen makes the bar step aside)
+      } finally { unfake(); }
+      // CORE's view menu: FLOW.exe --flow-view=… (a second instance's argv)
+      assert.equal(M.viewArg(['FLOW.exe','--flow-view=mini']),'mini'); assert.equal(M.viewArg(['FLOW.exe','--flow-view=bogus']),null); assert.equal(M.viewArg(['FLOW.exe']),null);
+      app.emit('second-instance',{},['FLOW.exe','--flow-view=minimal']); await pause(900);
+      assert.equal(await run('winMode'),'minimal'); assert.equal(win.getBounds().width,400,'minimal, at its own size');
+      app.emit('second-instance',{},['FLOW.exe','--flow-view=mini']); await pause(800);
+      assert.equal(await run('miniOn'),true,'mini'); assert(win.isAlwaysOnTop());
+      app.emit('second-instance',{},['FLOW.exe','--flow-view=standard']); await pause(900);
+      assert.equal(await run('miniOn'),false); assert.deepEqual(win.getBounds(),initial,'standard, where it was');
+      const pillWas=M.pill.isOn();
+      app.emit('second-instance',{},['FLOW.exe','--flow-view=pill']); await pause(400);
+      assert.equal(M.pill.isOn(),!pillWas,'the pill toggles');
+      app.emit('second-instance',{},['FLOW.exe','--flow-view=pill']); await pause(400);
+      assert.equal(M.pill.isOn(),pillWas,'and back');
+    }
 
     // persistence across a reload
     await run(`pomPause();setSetting('theme','orchid');setSetting('timerStyle','mosaic');setSetting('vizStyle','burst');setSetting('vizSens',1.6);0`);

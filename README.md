@@ -11,11 +11,13 @@ Open `dist/FLOW-win32-x64/FLOW.exe`. Keep the executable with the rest of its fo
 | **Standard** | Timer stage + player / library. Resizable (min 880×640) and maximisable. | `M` toggles with minimal |
 | **Minimal** | Just the timer and the current track, 400×660 by default (min 340×520). The pin keeps it on top. | `M` |
 | **Mini** | A 360 px always-on-top bar; it grows a progress row while the timer runs. | `B` |
-| **Full screen** | The music visualiser (or the timer visual) with a big clock. | `F`, `Esc` to leave |
+| **Full screen** | The music visualiser (or the timer visual) with a big clock. On a monitor whose top is kept by a bar (CORE's bar or minimal bar), it fills the monitor *below* the bar and follows it when the bar changes. | `F`, `Esc` to leave |
 | **Pill** | A session bar on top of everything, on or off alongside any view. Snaps to the taskbar. | `O` |
 | **Timers** | Quick timers you name on the fly, in every view, or popped out into a window of their own. | `N` for a new one |
 
-Standard and minimal each remember their own size and position. FLOW reopens in the last one you used. The view buttons in the titlebar are icons; point at one and its name slides out. The link chip (TUTOR, GRIND, an open session) does the same.
+Standard, minimal and mini each remember their own size and position, on the monitor they were on, by themselves: no layout needed. A place now under a bar at the top of that monitor (CORE's) comes back just below it, never on another monitor. FLOW reopens in the last one you used. The pill remembers its monitor even when Windows gives that monitor a new id.
+
+**From another app:** `FLOW.exe --flow-view=standard|minimal|mini|fullscreen|pill` opens that view where it was last (full screen: on the monitor it was used on last; pill: on or off). CORE's launcher uses it when you right-click FLOW. The view buttons in the titlebar are icons; point at one and its name slides out. The link chip (TUTOR, GRIND, an open session) does the same.
 
 ## Look
 

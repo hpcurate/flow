@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('flowAPI', {
   setMini: (mini, width, height) => ipcRenderer.send('win:mini', { mini, width, height }),
   setFullscreen: (on) => ipcRenderer.send('win:fullscreen', { on }),
   onFullscreen: (cb) => ipcRenderer.on('win:fs', (_e, on) => cb(on)),
+  // a view asked for from outside (CORE's view menu: FLOW.exe --flow-view=…): standard / minimal / mini / fullscreen
+  onView: (cb) => ipcRenderer.on('win:view', (_e, v) => cb(v)),
   setProgress: (v, mode) => ipcRenderer.send('win:progress', { v, mode }),
   setTray: (text) => ipcRenderer.send('tray:tip', text),
   onMedia: (cb) => ipcRenderer.on('media', (_e, act) => cb(act)),

@@ -1549,6 +1549,8 @@ function init(){
   $('zen-pom-btn').onclick=pomStart;
   $('zen').addEventListener('mousemove',()=>{ if(zenOn) wakeCursor(); });
   if(winAPI && winAPI.onFullscreen) winAPI.onFullscreen(on=>{ if(!on) exitZenUI(); });
+  // CORE's view menu (FLOW.exe --flow-view=…): the same as this window's own view buttons
+  if(winAPI && winAPI.onView) winAPI.onView(v=>setMode(v));
   new ResizeObserver(()=>{ stageGeo=null; zenGeo=null; }).observe($('stage'));
   new ResizeObserver(()=>{ stageGeo=null; }).observe($('dial'));
   new ResizeObserver(()=>{ zenGeo=null; }).observe($('zen-dial'));
