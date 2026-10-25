@@ -17,7 +17,7 @@ Open `dist/FLOW-win32-x64/FLOW.exe`. Keep the executable with the rest of its fo
 
 Standard, minimal and mini each remember their own size and position, on the monitor they were on, by themselves: no layout needed. A place now under a bar at the top of that monitor (CORE's) comes back just below it, never on another monitor. FLOW reopens in the last one you used. The pill remembers its monitor even when Windows gives that monitor a new id.
 
-**From another app:** `FLOW.exe --flow-view=standard|minimal|mini|fullscreen|pill` opens that view where it was last (full screen: on the monitor it was used on last; pill: on or off). CORE's launcher uses it when you right-click FLOW. The view buttons in the titlebar are icons; point at one and its name slides out. The link chip (TUTOR, GRIND, an open session) does the same.
+**From another app:** `FLOW.exe --flow-view=standard|minimal|mini|fullscreen|pill` opens that view where it was last (full screen: on the monitor it was used on last; pill: on or off). CORE's launcher uses it when you right-click FLOW. `FLOW.exe --flow-session=<name>` (1.5.0) starts an open focus session by that name in the pill (one already open is ended first, filed as usual; the pill comes up): CORE's FLOW box (Ctrl+Alt+F) uses it. The view buttons in the titlebar are icons; point at one and its name slides out. The link chip (TUTOR, GRIND, an open session) does the same.
 
 ## Look
 
@@ -128,6 +128,7 @@ Closing the window hides FLOW to the tray (music keeps playing); quit from the t
 npm install
 npm start        # run from source
 npm run test:ui  # GUI check: drives every view and style, asserts, saves shot-*.png
+node ../_prompts/checks.cjs flow <words>   # only the parts of the GUI check that match (--list names them)
 npm run perf     # CPU per state (standard, minimal, full screen, mini, hidden, pill), % of the whole CPU
 npm run pack     # rebuild dist/FLOW-win32-x64
 ```

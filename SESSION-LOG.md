@@ -974,6 +974,65 @@ window it can place and close, and it now does.
 
 Packed via a side folder (FLOW was running) and the asar copied over; `heals.push` is in it.
 
+## 2026-10-25 (later) — the GUI check in parts (tests only, no version)
+
+Hugo: "only do parts of the checks for specific issues and run bigger checks if an issue arises".
+The whole check takes 144 s and was the only GUI suite with no filter at all, so every FLOW change
+paid all of it.
+
+**`test/visual.cjs` is now ten parts:** looks · views · other apps · the TUTOR / GRIND link · the pill ·
+the timers · the pill sizes · the draw loop · screens · view args. They sit between the boot (window,
+two generated tracks) and the reload, and both of those always run.
+- `UI_ONLY=<words>` runs the parts whose names match (a case-blind regex).
+  `node ../_prompts/checks.cjs flow <words>` does it, and `--list` names them.
+- The helpers that several parts use (the scripted media, the stand-in on the pipe, the pill's and
+  the timers' handles, `until`) moved up beside the boot.
+- A part that leaned on an earlier one sets that up itself when the earlier one didn't run:
+  - the link turns other apps' media on (without the real bridge);
+  - the reload writes the intention and turns other apps on;
+  - the reload checks the minimal view's saved width only in a full run.
+- A part can also say `{needs:[the start of an earlier part's name]}`, and the runner then runs that part
+  too. None needs it yet.
+- **Flaky, and not new:** "the mini bar is on top" (`assert(win.isAlwaysOnTop())` 0.7 s after
+  `enterMini()`, in views and in view args) failed in most runs from about 15:00 on 2026-10-25. That
+  includes the untouched suite from git HEAD (line 139). It passed in the full runs before that. Nothing
+  in FLOW clears the topmost flag there (`setMini` sets it), so something outside the test seems to be
+  taking it. **Worth a look:** it could also be what Hugo sees if the mini bar ever drops behind
+  windows.
+- How much to run, for every app: `../_prompts/CHECKS.md`.
+
+**Verified:**
+- A full run passed: ten parts, 144 s, as before. The two full runs before it stopped at hover checks,
+  "over the gap the pill still takes the clicks" and then the link chip's "pointed at: the name", with
+  nothing changed between them. Those checks move a synthetic pointer, and the real mouse crossing the
+  window takes the hover back, so they're flaky whenever the PC is in use during a run.
+- Each part alone: 8 of 10 passed (looks 18 s, the timers 53 s, the draw loop 8 s…). Views and view args
+  failed on the mini bar's on-top check (below).
+- From about 15:00 FLOW's window checks failed in most runs. The mini bar's on-top check failed in the
+  untouched suite from git HEAD too, and "closing FLOW's window leaves the pill up" failed once, so
+  something outside the test seemed to be moving windows. The file now is the one that passed in full,
+  plus the `needs` option and a comment. **A full run on a quiet PC is still owed.**
+
+## 2026-10-25 (evening) — a focus session from CORE's FLOW box (1.5.0)
+
+Hugo's prompter request `r261025-bnti` (CORE's side): "the one summon box should just have a keybind on every
+popup that lets you cycle between the other popups … you can add a flow popup". CORE 0.13.0's FLOW box
+(Ctrl+Alt+F) has three tabs: a timer (FLOW's existing `--flow-timer`), a view (`--flow-view`) and a
+**session**, which needed FLOW's half (log `updates/26-10-25_update_v1.5.0.md`).
+
+**FLOW:**
+- `FLOW.exe --flow-session=<name>` (`pill-main.js` `fromArgs`): an open focus session by that name, with
+  the pill's usual goal and breaks. One already open is ended first (an end files it when it had a minute of
+  focus). While TUTOR or GRIND is linked, it waits underneath, as an open session does. The pill comes up if
+  it was off.
+- A running FLOW hears it as a second instance; a closed one starts with it (300 ms after the pill is up,
+  like `--flow-timer`).
+
+**Verified:** `UI_ONLY="view args"` and `UI_ONLY=pill` pass. The view-args part now also sends
+`--flow-session=mixing  the set` (named, spaces folded, the pill up) and then `--flow-session=chapter 4`
+(the open one ends, the new one takes its place); an argv without it does nothing. Packed into `dist/`
+(FLOW wasn't running), the asar checked.
+
 ## Open follow-ups
 - The visualiser was tuned on a generated loop. Real tracks may want a different default
   sensitivity (Settings → Visualiser → Sensitivity).

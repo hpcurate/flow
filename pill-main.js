@@ -573,6 +573,17 @@ module.exports = function createPill({ getWin, link, linkSend, linkToRenderer, s
     else if (src === 'open') O.phase(D.open.phase === 'focus' ? 'break' : 'focus');
     else if (src === 'pom') { const w = getWin(); if (w) w.webContents.send('media', 'pom-skip'); }
   }
+  /* CORE's FLOW box (1.5.0, Hugo's r261025-bnti "you can add a flow popup"): FLOW.exe --flow-session=<name> starts an
+     open session by that name. One already open is ended first (filed as an end always files it); while TUTOR or GRIND
+     is linked, it waits underneath as an open one does. The pill comes up to show it. */
+  function fromArgs(argv) {
+    const x = (argv || []).map(String).find(a => a.toLowerCase().startsWith('--flow-session='));
+    if (x == null) return false;
+    if (D.open) O.end();
+    O.start({ name: x.slice(x.indexOf('=') + 1).replace(/^"|"$/g, '') });
+    if (!D.cfg.on) set('on', true);
+    return true;
+  }
   function end() {
     const src = source();
     if (src === 'link') linkSend({ t: 'cmd', cmd: 'end' });
@@ -748,7 +759,7 @@ module.exports = function createPill({ getWin, link, linkSend, linkToRenderer, s
   setTimeout(() => { replay(); refresh(); }, 0);
 
   return {
-    linkHello, linkSession, linkDropped, mirrorCmd, replay, set, refresh, push,
+    linkHello, linkSession, linkDropped, mirrorCmd, replay, set, refresh, push, fromArgs,
     // the timers (timers-main.js): whether the pill is there to dock to, where its group is, the timers to show
     isOn: () => D.cfg.on,
     groupRect: () => rect && shown ? { x: rect.x, y: rect.y, w: rect.g, h: rect.h } : null,

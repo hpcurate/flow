@@ -1,7 +1,8 @@
 /* FLOW GUI check — loads the real main.js in a throwaway profile, drives every
    view and style with a generated music track, asserts on window bounds,
    layout fit, persistence and renderer errors, and saves shot-*.png to read.
-   Run: npm run test:ui   (FLOW_LOG=1 also echoes the renderer console) */
+   Run: npm run test:ui   (FLOW_LOG=1 also echoes the renderer console; UI_ONLY=<words> runs only the
+   parts whose names match, between the boot and the reload: _prompts/CHECKS.md) */
 const {app,BrowserWindow,ipcMain,shell,screen}=require('electron');
 const fs=require('fs');
 const os=require('os');
@@ -81,6 +82,38 @@ app.whenReady().then(async()=>{
       const at=(x,y)=>'#'+[0,1,2].map(c=>raw[y*129+1+x*4+c].toString(16).padStart(2,'0')).join('');
       assert.deepEqual([at(9,9),at(23,9),at(9,22),at(22,19),at(16,30)],[...th.k,th.bg].map(c=>c.toLowerCase()),where+': icon colours');
     };
+    // UI_ONLY=<words> runs only the parts whose names match (a case-blind regex: "pill|timers" takes both); the boot
+    // before them and the reload after them always run. A part that leans on one before it sets that up itself when
+    // the other didn't run (ran), or says { needs: [the start of its name] } and _prompts/checks.cjs runs that too
+    const only=process.env.UI_ONLY?new RegExp(process.env.UI_ONLY,'i'):null, ran=new Set();
+    const part=(name,{needs=[]}={})=>{ if(only&&!only.test(name)) return false; ran.add(name.split(':')[0]);
+      const miss=needs.filter(n=>!ran.has(n)); console.log('  part '+name+(miss.length?'  (it leans on parts that did not run: '+miss.join(' · ')+')':'')); return true; };
+    let b,v,T,real=null,live=null;
+    // other apps' media, scripted: the page is fed directly
+    const ART=`(()=>{const c=document.createElement('canvas');c.width=c.height=300;const x=c.getContext('2d');
+      x.fillStyle='#16233f';x.fillRect(0,0,300,300);x.fillStyle='#ff4f2e';x.beginPath();x.arc(105,115,72,0,7);x.fill();
+      x.fillStyle='#ffc23d';x.fillRect(150,150,118,118);x.fillStyle='#f2ede4';x.fillRect(32,236,96,18);return c.toDataURL();})()`;
+    const SYS=o=>`onSys(Object.assign({t:'state',app:'Spotify.exe',title:'Out Of Your Depth - Skellytn Remix',artist:'Fourward',album:'Out Of Your Depth',
+      status:'Playing',pos:62,dur:208.3,at:Date.now(),prev:true,next:true,seek:true,key:'k1'},${JSON.stringify(o||{})}));0`;
+    // a stand-in TUTOR / GRIND on the link's pipe
+    const net=require('net');
+    const linkTo=async()=>{
+      const s=net.connect(process.env.FLOW_LINK_PIPE), got=[]; let buf='';
+      await new Promise((r,j)=>{ s.once('connect',r); s.once('error',j); });
+      s.setEncoding('utf8');
+      s.on('data',d=>{ buf+=d; let i; while((i=buf.indexOf('\n'))>=0){ const l=buf.slice(0,i).trim(); buf=buf.slice(i+1); if(l) got.push(JSON.parse(l)); } });
+      return {s,got,say:m=>s.write(JSON.stringify(m)+'\n')};
+    };
+    const SES=o=>Object.assign({t:'session',phase:'focus',running:true,left:1500,total:3000,focus:0,goal:7200,label:'TUTOR'},o);
+    // the pill and the timers, from main.js
+    const M=require('../main.js'), P=M.pill._test, TM=M.timers._test;
+    const launched=[]; P.H.launch=(exe,args)=>launched.push({exe,args});     // TUTOR / GRIND are never really started
+    const fakeGrind=path.join(profile,'GRIND.exe'); fs.writeFileSync(fakeGrind,'');
+    const notes=[]; TM.H.notify=t=>notes.push(t);     // no real Windows notification
+    const pillRun=code=>P.win.webContents.executeJavaScript(code,true);
+    const pillShot=async name=>fs.writeFileSync(path.join(__dirname,`../shot-${name}.png`),(await P.win.webContents.capturePage()).toPNG());
+    const until=async(fn,what,ms=4000)=>{ const end=Date.now()+ms; while(!(await fn())){ if(Date.now()>end) throw new Error('timed out: '+what); await pause(100); } };
+
     const initial=win.getBounds();
     assert.equal(initial.width,1160); assert.equal(initial.height,820);
     // other apps stay out of the way until their own section below (whatever is playing on this PC)
@@ -94,6 +127,7 @@ app.whenReady().then(async()=>{
     assert(audioState.playing&&audioState.graph&&audioState.dur>11,JSON.stringify(audioState));
     assert(audioState.level>.03,'music should reach the analyser: '+JSON.stringify(audioState));
 
+    if(part('looks: the timer styles, palettes × darkness, the themed icon, Start-menu shortcuts, the library, the settings tabs')){
     // timer running at 40% through each timer visual
     await run(`pomStart();pom.remaining=Math.round(pom.total*.6);$('intention').value='Draft the chapter outline';$('intention').dispatchEvent(new Event('input'));renderPom();0`);
     await pause(700); await shot('2-standard-orbit'); await fit('standard, orbit');
@@ -123,10 +157,14 @@ app.whenReady().then(async()=>{
     await run(`setSide('player');0`);
     for(const tab of ['look','timer','viz','window']){ await run(`openDrawer('${tab}');0`); await pause(500); await shot('6-settings-'+tab); }
     await run(`closeDrawer();0`); await pause(400);
+    }
 
+    if(part("views: minimal, the mini bar, full screen with every visualiser, the standard view's sizes")){
+    // the timer runs, as the looks leave it (the mini bar is taller with it)
+    if(!ran.has('looks')) await run(`selectPhase('focus');pomStart();pom.remaining=Math.round(pom.total*.55);renderPom();0`);
     // minimal view
     await run(`setMode('minimal');0`); await pause(900);
-    let b=win.getBounds(); assert.equal(b.width,400); assert.equal(b.height,660);
+    b=win.getBounds(); assert.equal(b.width,400); assert.equal(b.height,660);
     assert.equal(b.x+b.width,initial.x+initial.width,'minimal keeps the top-right corner on first use');
     await shot('7-minimal'); await fit('minimal');
     await run(`setSetting('timerStyle','tide');0`); await pause(400); await shot('7-minimal-tide');
@@ -166,14 +204,14 @@ app.whenReady().then(async()=>{
     win.setBounds({...initial,width:880,height:640}); await pause(600); await shot('10-standard-min'); await fit('standard at its minimum size');
     win.setBounds({...initial,width:1600,height:1000}); await pause(600); await shot('10-standard-large'); await fit('standard large');
     win.setBounds(initial); await pause(700);
+    }
 
+    if(part('other apps: the media bridge, Spotify & co. in every view, the transport, the music sync')){
     // other apps (Spotify & co.), first through the real bridge: it must report something, and if
     // a player is actually playing, the visualiser must hear it through the system loopback
     await run(`audio.pause();setSetting('sysMedia',true);0`);
-    let real=null;
     for(let i=0;i<40&&!(real&&real.seen);i++){ await pause(250); real=await run(`({seen:sysSeen,err:sysErr,src,sys:sys&&{app:sys.app,title:sys.title,playing:sys.playing}})`); }
     assert(real.seen&&!real.err,'the media bridge should report: '+JSON.stringify(real));
-    let live=null;
     if(real.sys&&real.sys.playing){
       await pause(2500);
       live=await run(`({src,vizLoop,loopErr,level:Viz.A.level,app:sys.app,art:!!document.querySelector('#cover .art-img')})`);
@@ -184,13 +222,8 @@ app.whenReady().then(async()=>{
 
     // then a scripted session: stop the real bridge and feed the page directly
     ipcMain.emit('sys:enable',{},false); await pause(1200);
-    const ART=`(()=>{const c=document.createElement('canvas');c.width=c.height=300;const x=c.getContext('2d');
-      x.fillStyle='#16233f';x.fillRect(0,0,300,300);x.fillStyle='#ff4f2e';x.beginPath();x.arc(105,115,72,0,7);x.fill();
-      x.fillStyle='#ffc23d';x.fillRect(150,150,118,118);x.fillStyle='#f2ede4';x.fillRect(32,236,96,18);return c.toDataURL();})()`;
-    const SYS=o=>`onSys(Object.assign({t:'state',app:'Spotify.exe',title:'Out Of Your Depth - Skellytn Remix',artist:'Fourward',album:'Out Of Your Depth',
-      status:'Playing',pos:62,dur:208.3,at:Date.now(),prev:true,next:true,seek:true,key:'k1'},${JSON.stringify(o||{})}));0`;
     await run(SYS()); await run(`onSys({t:'art',key:'k1',url:${ART}});0`); await pause(500);
-    let v=await run(`({src,title:$('np-title').textContent,sub:$('np-sub').textContent,img:!!document.querySelector('#cover .art-img'),
+    v=await run(`({src,title:$('np-title').textContent,sub:$('np-sub').textContent,img:!!document.querySelector('#cover .art-img'),
       loop:$('loop-btn').disabled,pauseIco:$('play-ico').innerHTML.includes('rect'),tray:trayTip})`);
     assert.equal(v.src,'sys'); assert.equal(v.title,'Out Of Your Depth - Skellytn Remix'); assert.equal(v.sub,'Spotify · Fourward');
     assert(v.img&&v.loop&&v.pauseIco&&v.tray.includes('♪ Out Of Your Depth'),JSON.stringify(v));
@@ -241,21 +274,16 @@ app.whenReady().then(async()=>{
     v=await run(`({src,sys:!!sys,title:$('np-title').textContent,loop:$('loop-btn').disabled,vizLoop})`);
     assert.deepEqual(v,{src:'flow',sys:false,title:'Night drive',loop:false,vizLoop:false});
     await run(`setSetting('sysMedia',true);0`);
+    }
 
+    if(part('the TUTOR / GRIND link: the pipe, the chip, the music on its breaks, link.json, a takeover')){
+    // its music check needs other apps' media on, without the real bridge (as the part before leaves it)
+    if(!ran.has('other apps')){ await run(`audio.pause();setSetting('sysMedia',true);0`); await pause(300); ipcMain.emit('sys:enable',{},false); await pause(1200); }
     // the TUTOR link: a stand-in TUTOR on the pipe runs the clock, FLOW mirrors it, follows its
     // breaks with the music and sends its own timer buttons back; unlinking restores FLOW's timer
-    const net=require('net');
-    const linkTo=async()=>{
-      const s=net.connect(process.env.FLOW_LINK_PIPE), got=[]; let buf='';
-      await new Promise((r,j)=>{ s.once('connect',r); s.once('error',j); });
-      s.setEncoding('utf8');
-      s.on('data',d=>{ buf+=d; let i; while((i=buf.indexOf('\n'))>=0){ const l=buf.slice(0,i).trim(); buf=buf.slice(i+1); if(l) got.push(JSON.parse(l)); } });
-      return {s,got,say:m=>s.write(JSON.stringify(m)+'\n')};
-    };
-    const SES=o=>Object.assign({t:'session',phase:'focus',running:true,left:1500,total:3000,focus:0,goal:7200,label:'TUTOR'},o);
     await run(`pomPause();selectPhase('break');0`);
     const own=await run(`({phase:pom.phase,remaining:pom.remaining,total:pom.total})`);
-    let T=await linkTo();
+    T=await linkTo();
     T.say({t:'hello',app:'TUTOR',v:1}); T.say(SES()); await pause(600);
     assert.deepEqual(T.got[0],{t:'hello',app:'FLOW',v:1});
     v=await run(`({linked:document.body.classList.contains('linked'),badge:$('link-badge').checkVisibility(),phase:$('pom-phase').textContent,
@@ -306,14 +334,10 @@ app.whenReady().then(async()=>{
     G.say({t:'bye'}); await pause(400);
     v=await run(`({linked:document.body.classList.contains('linked'),phase:pom.phase,remaining:pom.remaining,total:pom.total})`);
     assert.deepEqual(v,{linked:false,...own},'the takeover kept FLOW\'s own timer');
+    }
 
+    if(part('the pill: shown, held against other apps, the open session, a link and the hand-over, dragging, its settings')){
     // ── the pill: a session bar on top of everything, alongside the views ──
-    const P=require('../main.js').pill._test;
-    const launched=[]; P.H.launch=(exe,args)=>launched.push({exe,args});     // TUTOR / GRIND are never really started
-    const fakeGrind=path.join(profile,'GRIND.exe'); fs.writeFileSync(fakeGrind,'');
-    const pillRun=code=>P.win.webContents.executeJavaScript(code,true);
-    const pillShot=async name=>fs.writeFileSync(path.join(__dirname,`../shot-${name}.png`),(await P.win.webContents.capturePage()).toPNG());
-    const until=async(fn,what,ms=4000)=>{ const end=Date.now()+ms; while(!(await fn())){ if(Date.now()>end) throw new Error('timed out: '+what); await pause(100); } };
     await run(`pomPause();setSetting('sysMedia',false);togglePill();0`);
     await until(()=>P.shown,'the pill shows');
     await until(async()=>(await pillRun(`!!document.querySelector('#in .go')`)),'the pill page renders');
@@ -468,10 +492,10 @@ app.whenReady().then(async()=>{
     const pj=JSON.parse(fs.readFileSync(path.join(profile,'pill.json'),'utf8'));
     assert(pj.cfg.on===false&&pj.cfg.goalMin===135&&pj.pos&&pj.done.length===1,JSON.stringify(pj.cfg));
     await run(`setSetting('sysMedia',true);0`);
+    }
 
+    if(part('the timers: made on the fly, in every view, popped out, docked beside the pill, ringing, their settings, --flow-timer and its dings')){
     // ── the timers: quick ones made on the fly, in every view or popped out ──
-    const M=require('../main.js'), TM=M.timers._test;
-    const notes=[]; TM.H.notify=t=>notes.push(t);     // no real Windows notification
     const tmRow=name=>`[...document.querySelectorAll('.tm-row')].find(r=>r.querySelector('.tm-tag')&&r.querySelector('.tm-tag').textContent===${JSON.stringify(name)})`;
     const tmType=(name,dur)=>run(`(()=>{const n=document.querySelector('.tm-name'),d=document.querySelector('.tm-dur');n.focus();
       n.value=${JSON.stringify(name)};n.dispatchEvent(new Event('input'));d.value=${JSON.stringify(dur||'')};d.dispatchEvent(new Event('input'));return 0})()`);
@@ -765,7 +789,9 @@ app.whenReady().then(async()=>{
     TM.set('every','');
     for(const t of [...TM.list]) TM.C.remove(t.id);
     TM.H.dinged=null;
+    }
 
+    if(part('the pill sizes: each size its own width and height, the parts give way as it narrows')){
     // the pill: each size its own width and height; the parts follow the height and give way as it narrows (2026-10-21)
     M.pill.set('on',true); M.pill.set('size','m'); await until(()=>P.shown&&P.win,'the pill again'); await pause(400);
     P.O.start({name:'Sizes'}); await pause(600);
@@ -790,6 +816,9 @@ app.whenReady().then(async()=>{
     await run("document.querySelector('[data-pd-reset=s]').click();closeDrawer();0"); await pause(300);
     assert.equal(P.D.cfg.dims.s.w,232,'reset');
     P.O.end(false); M.pill.set('on',false); await pause(400);
+    }
+
+    if(part('the draw loop: its pace at rest and in use, stopped while hidden, the covers turned by it')){
     // the draw loop's pace (Hugo's "up to 8% CPU", 2026-10-21): stopped with nothing on screen, 20 fps at rest,
     // settings.fps in use; the covers' shapes turn from it while music plays, never by a CSS animation
     await run(`document.hasFocus=()=>false;pointerAt=-1e9;setMode('standard');0`); await pause(300);
@@ -813,10 +842,11 @@ app.whenReady().then(async()=>{
     const held=await run(`document.querySelector('#spin-probe .sp').style.transform`); await pause(400);
     assert.equal(await run(`document.querySelector('#spin-probe .sp').style.transform`),held,'paused: they hold still');
     await run(`document.getElementById('spin-probe').remove();delete document.hasFocus;reflectPlayState();0`);
+    }
 
     // ── 1.4.0 (Hugo, 2026-10-22) ── the screens are faked here (screen's own functions, put back after), so this
     // never depends on the monitors of the PC it runs on
-    {
+    if(part("screens: a position saved under CORE's bar, the pill's monitor by id or bounds, full screen below a bar")){
       const real={all:screen.getAllDisplays,match:screen.getDisplayMatching,near:screen.getDisplayNearestPoint,prim:screen.getPrimaryDisplay};
       const fake=list=>{ screen.getAllDisplays=()=>list; screen.getPrimaryDisplay=()=>list[0]; screen.getDisplayMatching=r=>list.find(d=>r.x+r.width/2>=d.bounds.x&&r.x+r.width/2<d.bounds.x+d.bounds.width&&r.y+r.height/2>=d.bounds.y&&r.y+r.height/2<d.bounds.y+d.bounds.height)||list[0]; screen.getDisplayNearestPoint=p=>screen.getDisplayMatching({x:p.x,y:p.y,width:0,height:0}); };
       const unfake=()=>{ screen.getAllDisplays=real.all; screen.getDisplayMatching=real.match; screen.getDisplayNearestPoint=real.near; screen.getPrimaryDisplay=real.prim; };
@@ -861,6 +891,8 @@ app.whenReady().then(async()=>{
         // (a free top, Windows' own full screen, is the check above when the test's monitor has no bar on it — never
         // forced here: on a PC whose CORE bar sits on that monitor, a real full screen makes the bar step aside)
       } finally { unfake(); }
+    }
+    if(part("view args: CORE's view menu, FLOW.exe --flow-view=… to a second instance")){
       // CORE's view menu: FLOW.exe --flow-view=… (a second instance's argv)
       assert.equal(M.viewArg(['FLOW.exe','--flow-view=mini']),'mini'); assert.equal(M.viewArg(['FLOW.exe','--flow-view=bogus']),null); assert.equal(M.viewArg(['FLOW.exe']),null);
       app.emit('second-instance',{},['FLOW.exe','--flow-view=minimal']); await pause(900);
@@ -874,18 +906,29 @@ app.whenReady().then(async()=>{
       assert.equal(M.pill.isOn(),!pillWas,'the pill toggles');
       app.emit('second-instance',{},['FLOW.exe','--flow-view=pill']); await pause(400);
       assert.equal(M.pill.isOn(),pillWas,'and back');
+      // CORE's FLOW box (1.5.0): FLOW.exe --flow-session=<name>, an open session by that name in the pill
+      const P=M.pill._test;
+      if(P.D.open) P.O.end(false);
+      assert.equal(M.pill.fromArgs(['FLOW.exe','--flow-view=mini']),false,'no session in the arguments: nothing');
+      app.emit('second-instance',{},['FLOW.exe','--flow-session=mixing  the set']); await pause(500);
+      assert.equal(P.D.open&&P.D.open.name,'mixing the set'); assert(M.pill.isOn(),'the pill shows it');
+      app.emit('second-instance',{},['FLOW.exe','--flow-session=chapter 4']); await pause(400);
+      assert.equal(P.D.open.name,'chapter 4','a new one takes the open one\'s place');
+      P.O.end(false); if(!pillWas) M.pill.set('on',false); await pause(300);
     }
 
-    // persistence across a reload
+    // persistence across a reload (always: what it reads back the parts above set, so a part that didn't run is set here)
+    if(!ran.has('looks')) await run(`$('intention').value='Draft the chapter outline';$('intention').dispatchEvent(new Event('input'));0`);
+    if(!ran.has('other apps')) await run(`setSetting('sysMedia',true);0`);
     await run(`pomPause();setSetting('theme','orchid');setSetting('timerStyle','mosaic');setSetting('vizStyle','burst');setSetting('vizSens',1.6);0`);
     win.reload(); await new Promise(r=>win.webContents.once('did-finish-load',r)); await pause(900);
     const kept=await run(`({sysMedia:settings.sysMedia,theme:settings.theme,ts:settings.timerStyle,viz:settings.vizStyle,sens:settings.vizSens,tracks:tracks.length,intention:$('intention').value})`);
     assert.deepEqual(kept,{sysMedia:true,theme:'orchid',ts:'mosaic',viz:'burst',sens:1.6,tracks:2,intention:'Draft the chapter outline'});
     const st=JSON.parse(fs.readFileSync(path.join(profile,'win-state.json'),'utf8'));
-    assert.equal(st.mode,'standard'); assert.equal(st.bounds.minimal.width,400);
+    assert.equal(st.mode,'standard'); if(!only) assert.equal(st.bounds.minimal.width,400);
 
     assert.equal(errors.length,0,errors.join('\n'));
-    console.log(JSON.stringify({result:'PASS',audio:audioState,otherApps:{bridge:real.sys,live},initial,profile},null,2));
+    console.log(JSON.stringify({result:'PASS',parts:only?[...ran]:'all',audio:audioState,otherApps:{bridge:real&&real.sys,live},initial,profile},null,2));
     app.exit(0);
   }catch(error){ console.error(error); console.error('renderer errors:',errors); app.exit(1); }
 });

@@ -38,6 +38,8 @@ if (!primary) app.quit();
 app.on('second-instance', (_e, argv) => {
   // another app adding a timer (CORE's "how long?"): FLOW's window stays where it is
   if (timers && timers.fromArgs(argv)) return;
+  // CORE's FLOW box: a focus session by name, in the pill (1.5.0)
+  if (pill && pill.fromArgs(argv)) return;
   // CORE's view menu: that view, where it was last (below)
   if (viewFromArgs(argv)) return;
   if (!win) return;
@@ -558,6 +560,8 @@ app.whenReady().then(() => {
   timers = createTimers({ getWin: () => win, showFlow, getPill: () => pill, onChange: trayMenu });
   // started by another app for a timer (--flow-timer=…): it is added once the timers are up
   setTimeout(() => timers.fromArgs(process.argv), 300);
+  // started by CORE's FLOW box for a session (--flow-session=…, 1.5.0)
+  setTimeout(() => pill.fromArgs(process.argv), 300);
   // started by CORE's view menu (--flow-view=…): that view once the page is up
   if (viewArg(process.argv)) win.webContents.once('did-finish-load', () => setTimeout(() => viewFromArgs(process.argv), 300));
   trayMenu();
