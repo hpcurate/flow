@@ -938,6 +938,42 @@ The timers' pop-out drag check now allows a work area that starts below the top.
 folder (the dist folder was locked), asar copied over; `homeOf`, `softRect`, `homeDisplay`,
 `onView` in it.
 
+## 2026-10-25 — the pill holds its place against other apps (1.4.1)
+
+Hugo's prompter request `r261023-vg7n` "issues with placement — the pill doesn't correctly remember
+it's position · sometimes it does turn back on (says it's on but it's hidden) · i think it should be
+it's own process so it doesn't mess with window placement memory and all" (log
+`updates/26-10-25_update_v1.4.1.md`).
+
+**The cause, found in his CORE settings:** his "code" layout held an entry for FLOW.exe titled
+"FLOW pill" (x −2, y 1391, 425×64), saved while the pill was up. CORE's helper listed the pill as one
+of FLOW's windows. So opening that layout moved the pill to the saved rect, and `place()` never moved
+it back, because it only called `setBounds` when its own rect changed (`boundsKey`). Putting the
+layout away is set to *close*, which sent the pill WM_CLOSE: the window went, while `cfg.on` stayed
+true. That is "says it's on but it's hidden".
+
+**FLOW:**
+- `place()` compares the window's real bounds (±2 px) with where it belongs.
+- A move, hide or minimise that FLOW didn't make calls `heal()` (250 ms later, backing off after 6
+  in 10 s). A close it didn't ask for is refused while the pill is on, until FLOW quits
+  (`before-quit`).
+- A 5 s look covers what no event reports (a window gone, hidden by another app).
+
+**CORE 0.12.0** (its half): the helper no longer lists windows that can't be activated
+(WS_EX_NOACTIVATE without WS_EX_APPWINDOW: alt-tab's own rule; the pill is `focusable: false`), so
+no layout can catch it again. An entry saved before ("FLOW pill" / "FLOW timer") is dropped.
+
+**"Its own process":** not done. CORE knows windows by their exe, and a second process would still be
+FLOW.exe, so it wouldn't have kept CORE away. What CORE needed was to stop treating the pill as a
+window it can place and close, and it now does.
+
+**Verified:** `npm run test:ui` passes. New checks on the test's own pill:
+- moved and resized by "another app" (`setBounds`): back in its place;
+- `close()`: still up;
+- `hide()` and `minimize()`: shown again.
+
+Packed via a side folder (FLOW was running) and the asar copied over; `heals.push` is in it.
+
 ## Open follow-ups
 - The visualiser was tuned on a generated loop. Real tracks may want a different default
   sensitivity (Settings → Visualiser → Sensitivity).

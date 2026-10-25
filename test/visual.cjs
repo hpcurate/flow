@@ -327,6 +327,14 @@ app.whenReady().then(async()=>{
     await pillShot('13-pill-idle');
     // FLOW's window can be hidden to the tray: the pill stays
     win.hide(); await pause(400); assert(P.shown&&P.win.isVisible(),'closing FLOW\'s window leaves the pill up'); win.show(); await pause(300);
+    // other apps' hands (1.4.1, r261023-vg7n): CORE's layout moved the pill to its saved rect and, put away, closed it
+    { const want=P.win.getBounds();
+      P.win.setBounds({x:want.x+300,y:want.y-200,width:425,height:64});
+      await until(()=>{ const b=P.win.getBounds(); return b.x===want.x&&b.y===want.y&&b.width===want.width&&b.height===want.height; },'moved by another app: back in its place');
+      P.win.close(); await pause(500);
+      assert(P.win&&!P.win.isDestroyed()&&P.win.isVisible()&&P.shown,'closed by another app while on: still up');
+      P.win.hide(); await until(()=>P.win.isVisible(),'hidden by another app: shown again');
+      P.win.minimize(); await until(()=>P.win.isVisible()&&!P.win.isMinimized(),'minimised by another app: back'); }
 
     // an open session, named and started from the pill's panel; FLOW's window mirrors it like a link
     P.setPanel('main'); await pause(600);

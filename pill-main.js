@@ -117,7 +117,8 @@ module.exports = function createPill({ getWin, link, linkSend, linkToRenderer, s
     D.open = cleanOpen(raw.open);
     D.done = Array.isArray(raw.done) ? raw.done.filter(d => d && Number.isFinite(+d.start) && Number.isFinite(+d.focusSec)).slice(-500) : [];
   } catch {}
-  let saveT = null;
+  let saveT = null, quitting = false;
+  app.on('before-quit', () => { quitting = true; });
   function saveNow() { clearTimeout(saveT); try { fs.writeFileSync(FILE, JSON.stringify(D)); } catch {} }
   function save() { clearTimeout(saveT); saveT = setTimeout(saveNow, 400); }
 
@@ -312,7 +313,9 @@ module.exports = function createPill({ getWin, link, linkSend, linkToRenderer, s
     }
     const wx = x0 - PAD, wy = y0 - PAD, ww = x1 - x0 + 2 * PAD, wh = y1 - y0 + 2 * PAD;
     const bk = [wx, wy, ww, wh].join();
-    if (bk !== boundsKey) { boundsKey = bk; pw.setBounds({ x: wx, y: wy, width: ww, height: wh }); }
+    // where the window really is, not only where it was last put: another app can move it (1.4.1, below)
+    const cur = pw.getBounds(), off = Math.abs(cur.x - wx) > 2 || Math.abs(cur.y - wy) > 2 || Math.abs(cur.width - ww) > 2 || Math.abs(cur.height - wh) > 2;
+    if (bk !== boundsKey || off) { boundsKey = bk; pw.setBounds({ x: wx, y: wy, width: ww, height: wh }); }
     // the page is zoomed by the scale, so it is told its layout in its own (CSS) pixels
     const lay = { gx: (r.x - wx) / z, gr: (wx + ww - r.x - r.g) / z, gy: (r.y - wy) / z, w: r.w / z, h: r.h / z, grow: r.grow, ww: ww / z, wh: wh / z,
                   panel: pb && { x: (pb.x - wx) / z, y: (pb.y - wy) / z, w: pb.w / z, h: pb.h / z }, side, pad: PAD / z, z, idle: sz.idle, snapped: r.snapped };
@@ -343,7 +346,16 @@ module.exports = function createPill({ getWin, link, linkSend, linkToRenderer, s
     pw.setAlwaysOnTop(true, 'screen-saver');
     pw.setIgnoreMouseEvents(true, { forward: true });
     pw.on('blur', () => { if (panel) setPanel(null); });
-    pw.on('closed', () => { pw = null; loaded = false; shown = false; bridgeSay('hwnd 0'); });
+    /* other apps' hands (1.4.1, Hugo's r261023-vg7n: "the pill doesn't correctly remember it's position · sometimes it
+       does turn back on (says it's on but it's hidden)"). CORE's layout had caught the pill as one of FLOW's windows:
+       opening the layout moved it, putting the layout away closed it (WM_CLOSE) while its setting stayed on. Now a
+       close FLOW didn't ask for is refused while the pill is on, and a move, a hide or a minimise it didn't make is
+       undone (`heal`). */
+    pw.on('close', e => { if (!quitting && D.cfg.on) e.preventDefault(); });
+    pw.on('move', () => { if (!drag) heal(); });
+    pw.on('hide', () => { if (shown) heal(); });
+    pw.on('minimize', () => { try { pw.restore(); } catch {} heal(); });
+    pw.on('closed', () => { pw = null; loaded = false; shown = false; bridgeSay('hwnd 0'); if (D.cfg.on && !quitting) heal(); });
     pw.webContents.on('did-finish-load', () => {
       loaded = true; layoutKey = '';
       bridgeSay('hwnd ' + hwnd());
@@ -352,6 +364,22 @@ module.exports = function createPill({ getWin, link, linkSend, linkToRenderer, s
       const q = fxQueue; fxQueue = []; for (const m of q) send('pill:fx', m);
     });
     pw.loadFile(path.join(__dirname, 'pill.html'));
+  }
+  /* put it back where it belongs, shown if it should be (a short wait: a layout moves its windows twice, 1.6 s apart).
+     Only moves that leave it somewhere else count, so its own setBounds never loops; a run of them backs off. */
+  let healT = null, heals = [];
+  function heal() {
+    clearTimeout(healT);
+    healT = setTimeout(() => {
+      const now = Date.now();
+      heals = heals.filter(t => now - t < 10000);
+      if (heals.length >= 6) { healT = setTimeout(heal, 5000); return; }
+      heals.push(now);
+      if (!D.cfg.on || drag) return;
+      if (!pw || pw.isDestroyed()) { refresh(); return; }
+      if (shown && !pw.isVisible()) { pw.showInactive(); pw.setAlwaysOnTop(true, 'screen-saver'); pw.moveTop(); }
+      place();
+    }, 250);
   }
   function hwnd() {
     if (!pw || pw.isDestroyed()) return '0';
@@ -706,6 +734,8 @@ module.exports = function createPill({ getWin, link, linkSend, linkToRenderer, s
   }, 1000);
   // FLOW's window counts down between messages; a refresh keeps it honest (as TUTOR and GRIND do)
   setInterval(() => { if (D.open && !linked()) linkToRenderer(openMsg()); }, 2000);
+  // and a look every few seconds for what no event says (another app hid it, its window went)
+  setInterval(() => { if (D.cfg.on && !drag && (!pw || pw.isDestroyed() || (shown && !pw.isVisible()))) heal(); }, 5000);
   screen.on('display-metrics-changed', () => { place(); });
   screen.on('display-removed', () => { place(); refresh(); });
   screen.on('display-added', () => { place(); });

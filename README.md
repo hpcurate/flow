@@ -70,6 +70,7 @@ A small session bar that sits on top of everything: the same pill as TUTOR's and
 - **No room kept for its controls:** point at it and it grows to show them, away from the side it is held by, so nothing under the pointer moves.
 - **Timers beside it:** drop the timers' pop-out against the pill's right end and they dock there, as capsules of the pill's height that open on their own controls when pointed at. A "+" appears on the free side for a new one, and clicking a capsule opens the timers panel. Pull a capsule away from the pill to give the timers their own window again.
 - **Place it** anywhere by dragging. Near the taskbar it lies on it and clicks into a spot: beside the icon group, before the tray or at the left edge. It stays above the taskbar, even after the Start menu closes.
+- **It holds its place:** if another app moves, hides or minimises it, it goes back. While it's on, only FLOW can close it. CORE's layouts don't see it at all (CORE 0.12.0).
 - **Settings → Pill:**
   - size (S / M / L), scale and opacity
   - each size's own width and height: what the pill shows grows with its height, and the least important parts ("break in…", the phase, the tag, the visualiser…) give way as it gets narrower
