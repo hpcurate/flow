@@ -1076,6 +1076,15 @@ full-screen app hid the test's pill. The views and view-args parts stop at "the 
 (`isAlwaysOnTop`), the known-flaky one (CHECKS.md §3). One run with those three asserts disabled in a temporary
 copy passed every other step of both parts.
 
+## 2026-10-26 (night) — CORE plays the timers' sounds (tests only, no version)
+
+CORE 0.20.0 (Hugo's r261026-la6b, its new settings → sounds) plays the timers' end and their dings itself, FLOW open
+or not, so the sound Hugo picks there is the one he hears: FLOW's window gets `done` / `ding` with `sound: 'off'` /
+`false` and shows them without a sound of its own. FLOW's code is unchanged (it always honoured `sound`); FLOW's own
+GUI test hosts the clock without CORE's sound hooks, so there FLOW still rings, as before. One stale assert fixed in
+`test/visual.cjs` (the timers part): since CORE 0.19.0 (r261026-0lyd) `timers.json` keeps the timers too, so it
+now expects the list. The timers, the pill, the link and "CORE's clock" parts pass against CORE 0.20.0.
+
 ## Open follow-ups
 - The visualiser was tuned on a generated loop. Real tracks may want a different default
   sensitivity (Settings → Visualiser → Sensitivity).

@@ -777,13 +777,14 @@ app.whenReady().then(async()=>{
     await run(`document.querySelector('#tm-names [data-forget="Laundry"]').click();0`); await pause(300);
     assert(!TM.D.names.some(n=>n.name==='Laundry'),'forgotten');
     await run(`closeDrawer();0`); await pause(300);
-    // off: the timers keep running hidden (they still ring); the names are on disk, the timers never are
+    // off: the timers keep running hidden (they still ring); the names are on disk — and since CORE 0.19.0 (Hugo's
+    // r261026-0lyd "timers / sessions / alarms should be saved upon exit and resume on start") the timers too
     await run(`$('tm-btn').click();0`); await pause(500);
     assert.equal(await run(`document.querySelector('.tm-dock').parentNode.id`),'tm-slot-park');
     assert(TM.list.length>0,'hidden, not stopped');
     await pause(500);
     const tj=JSON.parse(fs.readFileSync(path.join(profile,'clock','timers.json'),'utf8'));   // CORE's clock keeps it (1.6.0)
-    assert(tj.cfg.on===false&&tj.cfg.bar==='drain'&&tj.names.some(n=>n.name==='Tea'&&n.color==='#14B8A0'&&n.dur===240000)&&!('list' in tj),JSON.stringify(tj).slice(0,300));
+    assert(tj.cfg.on===false&&tj.cfg.bar==='drain'&&tj.names.some(n=>n.name==='Tea'&&n.color==='#14B8A0'&&n.dur===240000)&&Array.isArray(tj.list)&&tj.list.length===TM.list.length,JSON.stringify(tj).slice(0,300));
     for(const t of [...TM.list]) TM.C.remove(t.id);
     TM.set('bar','fill'); TM.set('order','added');
     // a timer from the command line (CORE's "how long?") and the dings every so often (2026-10-21)
