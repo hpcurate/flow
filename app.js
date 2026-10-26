@@ -567,8 +567,17 @@ function musicForFocus(){
   if(src==='sys'){ if(sys&&!sys.playing) sysCmd('play'); }
   else if(current>=0 && audio.paused){ audio.volume=0; audio.play().catch(()=>{}); fadeEl(audio,master(),1500); }
 }
+/* 1.6.0: with CORE there, FLOW's pomodoro is kept by CORE's clock (Hugo's r261026-ojsf answered "b"): an open session
+   with these lengths, its long breaks and "auto next" — the pill shows it and FLOW mirrors it back like any open session.
+   Without CORE (or mid-phase already) it runs here as it always did. */
+function pomToCore(){
+  if(!coreUp||!winAPI||!winAPI.pillCmd||pom.running||pom.remaining<pom.total) return false;
+  winAPI.pillCmd('start',{name:settings.intention||'',pom:{focus:settings.focus,brk:settings.brk,longBrk:settings.longBrk,longEvery:settings.longEvery,goal:settings.goal,autoNext:settings.autoNext}});
+  return true;
+}
 function pomStart(){
   if(link.on){ winAPI.linkCmd('toggle'); return; }
+  if(pomToCore()) return;
   if(pom.running){ pomPause(); return; }
   pom.running=true; pom.tickAt=performance.now();
   pom.timer=setInterval(pomTick,1000);
@@ -673,7 +682,7 @@ function pomPhaseEnd(){
    FLOW's own pomodoro. FLOW's timer buttons send commands back to it. Another
    app linking takes over (main tells the first one bye); FLOW's own timer
    stays put underneath. When the link drops, it comes back exactly as it was. */
-/* An open session (started from the pill, kept in main by pill-main.js) comes
+/* An open session (started from the pill, kept by CORE's clock since 1.6.0; FLOW's pomodoro is one there) comes
    through here too, as kind 'open': it is the clock the same way, its name is
    the focus line under the clock, and reset ends it. */
 const link={on:false, app:'', saved:null, phase:null, kind:'link', name:''};
@@ -687,6 +696,7 @@ function showLinkApp(){
     :`Linked to ${link.app} — its session runs the timer. Click to unlink`;
 }
 function setLinked(on,app,kind,name){
+  link.pomFocus=null;   // 1.6.0: a pomodoro kept by CORE counts its focus from the session's own (onLink)
   if(on){
     const k=kind||'link', switched=!!app&&(app!==link.app||k!==link.kind);
     link.kind=k; link.name=name||'';
@@ -731,9 +741,17 @@ function onLink(m){
   if(link.phase&&link.phase!==ph){
     if(settings.chime) chime();
     if(ph==='break') musicToBreak(); else musicToFocus();
+    // 1.6.0: FLOW's pomodoro kept by CORE — a focus block done counts towards today's, as FLOW's own did
+    if(m.pom&&ph==='break'){ rollDay(); pom.sessions++; savePomSessions(); }
   } else if(!link.phase&&ph==='focus'&&m.running) musicForFocus();
   link.phase=ph;
-  pom.phase=ph; pom.long=false;
+  // 1.6.0: FLOW's pomodoro kept by CORE — today's "focused" grows by the session's own focus, as FLOW's own timer's did
+  if(m.pom){
+    const f=Math.max(0,+m.focus||0);
+    if(link.pomFocus!=null&&f>link.pomFocus){ rollDay(); pom.focusSec+=f-link.pomFocus; localStorage.setItem(focusKey(),pom.focusSec); }
+    link.pomFocus=f;
+  }
+  pom.phase=ph; pom.long=!!(m.pom&&m.long);
   pom.total=Math.max(1,m.total|0); pom.remaining=Math.max(0,m.left|0);
   pom.running=!!m.running; pom.tickAt=performance.now();
   if(pom.running) pom.timer=setInterval(linkTick,1000);
@@ -1115,11 +1133,14 @@ function cycleViz(){
 function cycleTimer(){ setSetting('timerStyle',nextKey(Viz.TIMER_STYLES,settings.timerStyle)); }
 
 /* ════════════ The pill ════════════
-   A small always-on-top session bar that runs alongside every view (main.js +
-   pill-main.js own it). This page tells it what plays, FLOW's own timer and
+   A small always-on-top session bar on the taskbar, CORE's since 1.6.0 (its
+   clock, through main.js's relay). This page tells it what plays, FLOW's own timer and
    the theme, samples four bands of the analyser for its music bars, and
-   holds its settings tab. The open session itself lives in main. */
+   holds its settings tab. The open session itself lives in CORE. */
 let pillCfg=null, pillToday=null, pillOpen=null;
+// 1.6.0: CORE keeps the pill, the timers and the link (main relays them); false until it says hello
+let coreUp=false;
+const NO_CORE='CORE keeps the pill and the timers — it isn\'t running';
 let pillMusicKey='', pillPomKey='', winShown=true;
 function pillMusic(){
   if(!winAPI||!winAPI.pillExt) return;
@@ -1179,7 +1200,7 @@ function onPill(m){
   else if(m.t==='drawer') openDrawer(m.tab);
 }
 function pillOn(){ return !!(pillCfg&&pillCfg.on); }
-function togglePill(){ if(!winAPI||!winAPI.pillSet) return; winAPI.pillSet('on',!pillOn()); toast(pillOn()?'Pill hidden':'Pill on — drag it onto the taskbar'); }
+function togglePill(){ if(!winAPI||!winAPI.pillSet) return; if(!coreUp){ toast(NO_CORE); return; } winAPI.pillSet('on',!pillOn()); toast(pillOn()?'Pill hidden':'Pill on — drag it onto the taskbar'); }
 function reflectPill(){
   const on=pillOn();
   $('pill-btn').classList.toggle('on',on); $('pill-btn').setAttribute('aria-pressed',on);
@@ -1254,7 +1275,7 @@ function bindPill(){
 }
 
 /* ════════════ Timers ════════════
-   Quick timers made on the fly ("laundry 2h"): main (timers-main.js) keeps
+   Quick timers made on the fly ("laundry 2h"): CORE (its clock since 1.6.0, through main.js's relay) keeps
    them and timers-ui.js draws them. While they show in this window they are
    one dock, moved into the view on screen: a strip under the standard
    titlebar, a stack under the minimal view (main makes the window that much
@@ -1306,11 +1327,13 @@ function focusTimers(){
 /* N, and the hotkey or tray through main: the new-timer field, turning the timers on first if need be */
 function newTimer(){
   if(!winAPI||!winAPI.timersCmd) return;
+  if(!coreUp){ toast(NO_CORE); return; }
   if(!tmOn()){ tmWantFocus=true; winAPI.timersCmd({cmd:'set',k:'on',v:true}); return; }
   focusTimers();
 }
 function toggleTimers(){
   if(!winAPI||!winAPI.timersCmd) return;
+  if(!coreUp){ toast(NO_CORE); return; }
   const on=!tmOn(), run=tmState?tmState.list.filter(t=>!t.done).length:0;
   winAPI.timersCmd({cmd:'set',k:'on',v:on});
   toast(on?'Timers on — N for a new one':run?`Timers hidden — ${run} still running, they'll still ring`:'Timers hidden');
@@ -1614,6 +1637,8 @@ function init(){
 
   // other apps' media; the bridge reports position only now and then, so tick the bar here
   if(winAPI&&winAPI.onSys) winAPI.onSys(onSys);
+  // 1.6.0: CORE keeps the clock (the pill, the timers, the link); whether it is there now
+  if(winAPI&&winAPI.onCore) winAPI.onCore(on=>{ coreUp=on; document.body.classList.toggle('no-core',!on); });
   if(winAPI&&winAPI.onLink) winAPI.onLink(onLink);
   $('link-badge').onclick=()=>{
     // an open session isn't a link to undo: the badge opens the pill's panel (or says where it ends)

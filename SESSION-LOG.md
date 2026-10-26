@@ -1033,6 +1033,49 @@ popup that lets you cycle between the other popups … you can add a flow popup"
 (the open one ends, the new one takes its place); an argv without it does nothing. Packed into `dist/`
 (FLOW wasn't running), the asar checked.
 
+## 2026-10-26 — the clock goes to CORE; FLOW is the player (1.6.0)
+
+Hugo's prompter request `r261026-ojsf`: "can you merge flow and core? or at least the timers / pill should be
+a part of core, flow is just a fancy visualizer" (with `r261026-bfjd`, "i think i we need to migrate the timers
+to core"). Asked in the file: (a) one app, (b) the clock to CORE and the player stays here, (c) only the timers.
+**He answered "b".** CORE 0.18.0 has the other half (`core/clock`, `core/CORE.md`); log
+`updates/26-10-26_update_v1.6.0.md`.
+
+**Moved to CORE** (`core/clock/`, the files as they were, adapted there): `pill-main.js`, `pill.*`,
+`pill-preload.js`, `pill.ps1`, `timers-main.js`, `timers.html`, `timers-pop.js`, `timers-preload.js`, `ring.*`,
+and the link's pipe server (`\\.\pipe\hugo-flow-link`, same messages). FLOW keeps `timers-ui.js` and
+`timers.css` for its own window's dock.
+
+**FLOW now:**
+- `main.js` connects to CORE's pipe for it (`\\.\pipe\hugo-core-flow`, `FLOW_CORE_PIPE` in tests) and relays:
+  its page's `pill:ext` / `pill:viz` / `pill:set` / `pill:cmd` / `timers:cmd` / `link:ready` / `link:cmd` go to
+  CORE, and CORE's `link:msg` / `pill:msg` / `timers:msg` / `media` come back to the page. So the page is the
+  same: its timer mirrors the session, its timers dock, its chip, its drawer's pill and timers tabs. Only its
+  own window is relayed (`mine(e)`): FLOW's GUI test hosts CORE's clock in this process, and the clock's pages
+  speak on the same channels. It looks for CORE again every 3 s; what the page last said (its music, theme,
+  intention, the timers' theme) is replayed when CORE comes.
+- CORE away (`core:state`, `body.no-core`): FLOW's own pomodoro runs as before; the pill's and the timers'
+  switches toast "CORE keeps the pill and the timers — it isn't running".
+- **The pomodoro in CORE** (`pomToCore`): the start button with CORE there and a fresh pomodoro starts an open
+  session in CORE's clock with FLOW's lengths (`pom: {focus, brk, longBrk, longEvery, goal, autoNext}`). FLOW
+  mirrors it like any open session; a focus block that ends counts in today's sessions, the session's own
+  focus minutes count in today's "focused" (`link.pomFocus`), and a long break shows as one.
+- `--flow-timer=…`, `--flow-session=…`, `--flow-view=pill` (`coreArgs`) are passed to CORE, kept until it
+  comes. `--tutor-link` / `--grind-link` (TUTOR or GRIND started FLOW because their pipe wasn't there): FLOW
+  starts CORE (`startCore`, `FLOW_CORE_EXE` in tests, at most every 30 s).
+- The tray loses the pill's and the timers' items (CORE's tray has them). `link.json` isn't written any more
+  (CORE's chain is the clock's own state). The drawer's pill and timers tabs say they live in CORE.
+
+**Verified:** the GUI check hosts CORE's clock (`../../core/clock`) on private pipes. Every part that moved
+passes against it over the real pipe: the link (CORE answers the hello), the pill, the timers, the pill
+sizes, the screens. A new part, "CORE's clock", covers the pomodoro kept by CORE (the long break, the day's
+count, the focused minutes), CORE away (FLOW's own timer, the switches' toast), arguments kept for CORE and
+passed on when it comes, and `--flow-view=pill` / `--flow-session` passed on. Those two moved here from
+"view args". The test turns "hide over full-screen apps" off: pill.ps1 reads the real screen, and Hugo's
+full-screen app hid the test's pill. The views and view-args parts stop at "the mini bar is on top"
+(`isAlwaysOnTop`), the known-flaky one (CHECKS.md §3). One run with those three asserts disabled in a temporary
+copy passed every other step of both parts.
+
 ## Open follow-ups
 - The visualiser was tuned on a generated loop. Real tracks may want a different default
   sensitivity (Settings → Visualiser → Sensitivity).
@@ -1046,10 +1089,9 @@ popup that lets you cycle between the other popups … you can add a flow popup"
 - Pill: only a horizontal taskbar is snapped to (a vertical one leaves it free). Spots
   are read on the primary taskbar only; on a secondary one it snaps to the band and the
   edges. Not yet seen: an auto-hiding taskbar, or a monitor at a scale other than 100%.
-- Pill: FLOW must be running for it. Starting FLOW with Windows straight to the tray (pill
-  only) was discussed but not built.
+- ~~Pill: FLOW must be running for it.~~ Since 1.6.0 the pill is CORE's, which starts with Windows.
 - Timers beside the pill: a group wider than the room beside its snap spot stops at the
   screen's edge and can cover taskbar icons (five timers + an M pill at the icons' left).
-- Timers: quitting FLOW ends them (Hugo: no need to save them). The overlay also pops over
+- Timers: quitting CORE ends them since 1.6.0 (FLOW before; Hugo: no need to save them). The overlay also pops over
   full-screen apps (games, videos); the pill's full-screen detection could gate it. The real
   Windows notification isn't exercised by the test (stubbed).

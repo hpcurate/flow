@@ -37,8 +37,10 @@ contextBridge.exposeInMainWorld('flowAPI', {
   pillCmd: (cmd, arg) => ipcRenderer.send('pill:cmd', { ...(arg || {}), cmd }),
   pillExt: (kind, v) => ipcRenderer.send('pill:ext', { kind, v }),
   pillViz: (v) => ipcRenderer.send('pill:viz', v),
-  // the timers (timers-main.js): the list in, the buttons out; dock: how tall they are docked under the minimal view
+  // the timers (CORE's since 1.6.0, relayed by main): the list in, the buttons out; dock: how tall they are docked under the minimal view
   onTimers: (cb) => { ipcRenderer.on('timers:msg', (_e, m) => cb(m)); ipcRenderer.send('timers:cmd', { cmd: 'ready' }); },
+  // 1.6.0: whether CORE is there — it keeps the pill, the timers and the link; without it FLOW's own timer runs
+  onCore: (cb) => ipcRenderer.on('core:state', (_e, on) => cb(!!on)),
   timersCmd: (m) => ipcRenderer.send('timers:cmd', m),
   setDock: (h) => ipcRenderer.send('win:dock', h)
 });

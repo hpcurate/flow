@@ -16,8 +16,12 @@ app.on('web-contents-created',(_,contents)=>{
   contents.on('console-message',(_e,level,message)=>{ if(level>=3) errors.push(message); if(process.env.FLOW_LOG) console.log('[renderer]',message); });
   contents.on('did-fail-load',(_e,code,description)=>errors.push(`${code}: ${description}`));
 });
-// the TUTOR link listens on a private pipe, so a running FLOW or TUTOR is never touched
-process.env.FLOW_LINK_PIPE='\\\\.\\pipe\\flow-test-'+process.pid;
+// 1.6.0: the pill, the timers and the TUTOR / GRIND link are CORE's (core/clock). The test hosts that clock itself, on
+// pipes of its own, so FLOW's page meets the real thing over the real pipe — and never Hugo's CORE, FLOW, TUTOR or GRIND.
+// It comes up with the first part that needs it (clockUp): the parts before it see FLOW without CORE, its own pomodoro.
+process.env.FLOW_CORE_PIPE='\\\\.\\pipe\\flow-test-core-'+process.pid;
+process.env.FLOW_CORE_EXE=path.join(profile,'no-CORE.exe');   // a FLOW that wants CORE started finds none to start
+const LINK_PIPE='\\\\.\\pipe\\flow-test-link-'+process.pid;
 const {restyleShortcuts}=require('../main.js');
 // the media bridge reads the real Windows sessions, but a test must never press play / skip
 // on the user's actual player: commands are recorded here instead of reaching it
@@ -95,22 +99,35 @@ app.whenReady().then(async()=>{
       x.fillStyle='#ffc23d';x.fillRect(150,150,118,118);x.fillStyle='#f2ede4';x.fillRect(32,236,96,18);return c.toDataURL();})()`;
     const SYS=o=>`onSys(Object.assign({t:'state',app:'Spotify.exe',title:'Out Of Your Depth - Skellytn Remix',artist:'Fourward',album:'Out Of Your Depth',
       status:'Playing',pos:62,dur:208.3,at:Date.now(),prev:true,next:true,seek:true,key:'k1'},${JSON.stringify(o||{})}));0`;
-    // a stand-in TUTOR / GRIND on the link's pipe
+    // a stand-in TUTOR / GRIND on the link's pipe (CORE's clock serves it since 1.6.0)
     const net=require('net');
     const linkTo=async()=>{
-      const s=net.connect(process.env.FLOW_LINK_PIPE), got=[]; let buf='';
+      const s=net.connect(LINK_PIPE), got=[]; let buf='';
       await new Promise((r,j)=>{ s.once('connect',r); s.once('error',j); });
       s.setEncoding('utf8');
       s.on('data',d=>{ buf+=d; let i; while((i=buf.indexOf('\n'))>=0){ const l=buf.slice(0,i).trim(); buf=buf.slice(i+1); if(l) got.push(JSON.parse(l)); } });
       return {s,got,say:m=>s.write(JSON.stringify(m)+'\n')};
     };
     const SES=o=>Object.assign({t:'session',phase:'focus',running:true,left:1500,total:3000,focus:0,goal:7200,label:'TUTOR'},o);
-    // the pill and the timers, from main.js
-    const M=require('../main.js'), P=M.pill._test, TM=M.timers._test;
+    // the pill and the timers: CORE's clock (core/clock), hosted here; FLOW's main relays to it as it does to CORE
+    const M=require('../main.js');
+    const clock=require('../../core/clock')({dir:path.join(profile,'clock'),migrateFrom:null,linkPipe:LINK_PIPE,flowPipe:process.env.FLOW_CORE_PIPE,
+      flowExe:()=>null,launch:()=>{},openSettings:()=>{},noHotkeys:true});
+    const P=clock.pill._test, TM=clock.timers._test;
     const launched=[]; P.H.launch=(exe,args)=>launched.push({exe,args});     // TUTOR / GRIND are never really started
     const fakeGrind=path.join(profile,'GRIND.exe'); fs.writeFileSync(fakeGrind,'');
     const notes=[]; TM.H.notify=t=>notes.push(t);     // no real Windows notification
     const pillRun=code=>P.win.webContents.executeJavaScript(code,true);
+    // the clock up and FLOW on it (FLOW's main looks again every 3 s; told to look now)
+    let clockOn=false;
+    const clockUp=async()=>{
+      // the pill hides over a full-screen app, and pill.ps1 reads the real screen: Hugo's own full-screen app would hide the
+      // test's pill. Off here (the full-screen step turns it on for itself)
+      if(!clockOn){ clockOn=true; clock.start(); P.set('fsHide',false); await pause(200); }
+      if(!M.core.up){ clearTimeout(M.core.timer); if(!M.core.sock) M.coreConnect(); }
+      const end=Date.now()+5000; while(!(M.core.up&&clock.flowUp)){ if(Date.now()>end) throw new Error('FLOW never reached the clock'); await pause(100); }
+      await pause(500);
+    };
     const pillShot=async name=>fs.writeFileSync(path.join(__dirname,`../shot-${name}.png`),(await P.win.webContents.capturePage()).toPNG());
     const until=async(fn,what,ms=4000)=>{ const end=Date.now()+ms; while(!(await fn())){ if(Date.now()>end) throw new Error('timed out: '+what); await pause(100); } };
 
@@ -276,7 +293,8 @@ app.whenReady().then(async()=>{
     await run(`setSetting('sysMedia',true);0`);
     }
 
-    if(part('the TUTOR / GRIND link: the pipe, the chip, the music on its breaks, link.json, a takeover')){
+    if(part('the TUTOR / GRIND link: the pipe (CORE\'s clock), the chip, the music on its breaks, a takeover')){
+    await clockUp();
     // its music check needs other apps' media on, without the real bridge (as the part before leaves it)
     if(!ran.has('other apps')){ await run(`audio.pause();setSetting('sysMedia',true);0`); await pause(300); ipcMain.emit('sys:enable',{},false); await pause(1200); }
     // the TUTOR link: a stand-in TUTOR on the pipe runs the clock, FLOW mirrors it, follows its
@@ -285,13 +303,13 @@ app.whenReady().then(async()=>{
     const own=await run(`({phase:pom.phase,remaining:pom.remaining,total:pom.total})`);
     T=await linkTo();
     T.say({t:'hello',app:'TUTOR',v:1}); T.say(SES()); await pause(600);
-    assert.deepEqual(T.got[0],{t:'hello',app:'FLOW',v:1});
+    assert.deepEqual(T.got[0],{t:'hello',app:'CORE',v:1},'CORE\'s clock answers (1.6.0)');
     v=await run(`({linked:document.body.classList.contains('linked'),badge:$('link-badge').checkVisibility(),phase:$('pom-phase').textContent,
       total:pom.total,left:pom.remaining,running:pom.running,tray:trayTip})`);
     assert(v.linked&&v.badge&&v.phase==='TUTOR · Focus'&&v.total===3000&&v.left>=1499&&v.left<=1500&&v.running&&v.tray.startsWith('FLOW · linked to TUTOR'),JSON.stringify(v));
-    // CORE's chain reads link.json (never the pipe)
-    const linkFile=()=>JSON.parse(fs.readFileSync(path.join(profile,'link.json'),'utf8')).linked;
-    assert.equal(linkFile(),'TUTOR','link.json names the linked app');
+    // CORE's chain: the clock's own state (FLOW's link.json before 1.6.0)
+    const linkFile=()=>clock.linked;
+    assert.equal(linkFile(),'TUTOR','the clock names the linked app');
     await shot('12-linked'); await fit('standard, linked');
     // the chip shows the link's logo; its name slides out only while it is pointed at
     const chipW=()=>run(`$('link-badge').querySelector('span').getBoundingClientRect().width`);
@@ -312,7 +330,7 @@ app.whenReady().then(async()=>{
     T.say({t:'bye'}); await pause(400);
     v=await run(`({linked:document.body.classList.contains('linked'),phase:pom.phase,remaining:pom.remaining,total:pom.total})`);
     assert.deepEqual(v,{linked:false,...own},'unlinked, FLOW\'s own timer is back');
-    assert.equal(linkFile(),null,'link.json clears on bye');
+    assert.equal(linkFile(),null,'unlinked on bye');
     // the badge unlinks from FLOW's side: TUTOR hears bye and the pipe closes
     T=await linkTo(); T.say({t:'hello',app:'TUTOR',v:1}); await pause(300);
     const closed=new Promise(r=>T.s.once('close',r));
@@ -329,7 +347,7 @@ app.whenReady().then(async()=>{
     assert(T.got.some(m=>m.t==='bye')&&T.s.destroyed,'the first app is told bye: '+JSON.stringify(T.got));
     v=await run(`({chip:$('link-badge').textContent,title:$('link-badge').title,phase:$('pom-phase').textContent,total:pom.total,tray:trayTip})`);
     assert(v.chip==='GRIND'&&v.title.startsWith('Linked to GRIND')&&v.phase==='GRIND · Focus'&&v.total===1500&&v.tray.startsWith('FLOW · linked to GRIND'),JSON.stringify(v));
-    assert.equal(linkFile(),'GRIND','link.json follows the takeover');
+    assert.equal(linkFile(),'GRIND','the clock follows the takeover');
     await shot('12-linked-grind');
     G.say({t:'bye'}); await pause(400);
     v=await run(`({linked:document.body.classList.contains('linked'),phase:pom.phase,remaining:pom.remaining,total:pom.total})`);
@@ -337,7 +355,8 @@ app.whenReady().then(async()=>{
     }
 
     if(part('the pill: shown, held against other apps, the open session, a link and the hand-over, dragging, its settings')){
-    // ── the pill: a session bar on top of everything, alongside the views ──
+    // ── the pill: a session bar on top of everything, alongside the views (CORE's since 1.6.0) ──
+    await clockUp();
     await run(`pomPause();setSetting('sysMedia',false);togglePill();0`);
     await until(()=>P.shown,'the pill shows');
     await until(async()=>(await pillRun(`!!document.querySelector('#in .go')`)),'the pill page renders');
@@ -460,9 +479,10 @@ app.whenReady().then(async()=>{
     // a full-screen app on that screen hides it; locked, it doesn't move
     const pd=screen.getDisplayMatching({x:P.rect.x,y:P.rect.y,width:P.rect.w,height:P.rect.h});
     const pb=screen.dipToScreenRect(null,pd.bounds);
+    P.set('fsHide',true);
     P.onBridge({t:'fs',on:true,mon:{x:pb.x,y:pb.y,w:pb.width,h:pb.height}}); await pause(300);
     assert.equal(P.shown,false,'hidden over a full-screen app');
-    P.onBridge({t:'fs',on:false}); await pause(300);
+    P.set('fsHide',false); P.onBridge({t:'fs',on:false}); await pause(300);
     assert.equal(P.shown,true);
     P.set('lock',true); const lr=P.rect, lp=JSON.stringify(P.D.pos); P.dragStart(lr.x+5,lr.y+5); P.dragMove(lr.x+200,lr.y-200); P.dragEnd(); await pause(200);
     // (beside the icons it still follows them as windows open and close: the place it keeps is what counts)
@@ -489,13 +509,14 @@ app.whenReady().then(async()=>{
     // off: the window goes; the setting and the place are on disk
     await run(`togglePill();0`); await pause(900);
     assert.equal(P.win,null); assert.equal(await run(`$('pill-btn').classList.contains('on')`),false);
-    const pj=JSON.parse(fs.readFileSync(path.join(profile,'pill.json'),'utf8'));
+    const pj=JSON.parse(fs.readFileSync(path.join(profile,'clock','pill.json'),'utf8'));   // CORE's clock keeps it (1.6.0)
     assert(pj.cfg.on===false&&pj.cfg.goalMin===135&&pj.pos&&pj.done.length===1,JSON.stringify(pj.cfg));
     await run(`setSetting('sysMedia',true);0`);
     }
 
     if(part('the timers: made on the fly, in every view, popped out, docked beside the pill, ringing, their settings, --flow-timer and its dings')){
-    // ── the timers: quick ones made on the fly, in every view or popped out ──
+    // ── the timers: quick ones made on the fly, in every view or popped out (CORE's since 1.6.0) ──
+    await clockUp();
     const tmRow=name=>`[...document.querySelectorAll('.tm-row')].find(r=>r.querySelector('.tm-tag')&&r.querySelector('.tm-tag').textContent===${JSON.stringify(name)})`;
     const tmType=(name,dur)=>run(`(()=>{const n=document.querySelector('.tm-name'),d=document.querySelector('.tm-dur');n.focus();
       n.value=${JSON.stringify(name)};n.dispatchEvent(new Event('input'));d.value=${JSON.stringify(dur||'')};d.dispatchEvent(new Event('input'));return 0})()`);
@@ -630,7 +651,7 @@ app.whenReady().then(async()=>{
     assert(TM.D.pos&&TM.D.pos.anchor==='top'&&TM.pop.getBounds().y<=Math.max(qb.y-900,popWa.y)+12&&TM.pop.getBounds().y<qb.y-300,'moved: '+JSON.stringify({pos:TM.D.pos,b:TM.pop.getBounds(),qb,popWa}));
 
     // the pill grows to make room for its controls, rather than keeping room for them
-    M.pill.set('on',true); M.pill.set('size','m'); await until(()=>P.shown&&P.win,'the pill again'); await pause(500);
+    clock.pill.set('on',true); clock.pill.set('size','m'); await until(()=>P.shown&&P.win,'the pill again'); await pause(500);
     P.O.start({name:'Reading'}); await pause(700);
     const pw0=await pillRun(`document.getElementById('pill').getBoundingClientRect().width`);
     let pq=P.rect, pwb=P.win.getBounds();
@@ -641,7 +662,7 @@ app.whenReady().then(async()=>{
     await hover(P.win,2,2);
     // docked beside the pill: the pop-out held against its right end docks there, and the timers grow out of it
     qb=TM.pop.getBounds();
-    const g0=M.pill.groupRect(), pr0={...P.rect};
+    const g0=clock.pill.groupRect(), pr0={...P.rect};
     TM.popDrag({phase:'start',x:qb.x+40,y:qb.y+20});
     TM.popDrag({phase:'move',x:qb.x+40+(g0.x+g0.w+6-(qb.x+8)),y:qb.y+20+(g0.y-(qb.y+8))}); await pause(250);
     assert(TM.nearPill(),'held against the pill');
@@ -699,7 +720,7 @@ app.whenReady().then(async()=>{
     await until(()=>TM.popShown,'the pop-out is back',5000);
     assert.equal(TM.D.cfg.dock,false);
     assert.equal(await pillRun(`document.querySelectorAll('#tdock .tc').length`),0,'none left beside the pill');
-    P.O.end(false); M.pill.set('on',false); await pause(500);
+    P.O.end(false); clock.pill.set('on',false); await pause(500);
     // the pop-out's field shows only while it is pointed at
     assert.equal(await popRun(`getComputedStyle(document.querySelector('.tm-new')).opacity`),'0','at rest: out of sight');
     qb=TM.pop.getBounds();
@@ -761,7 +782,7 @@ app.whenReady().then(async()=>{
     assert.equal(await run(`document.querySelector('.tm-dock').parentNode.id`),'tm-slot-park');
     assert(TM.list.length>0,'hidden, not stopped');
     await pause(500);
-    const tj=JSON.parse(fs.readFileSync(path.join(profile,'timers.json'),'utf8'));
+    const tj=JSON.parse(fs.readFileSync(path.join(profile,'clock','timers.json'),'utf8'));   // CORE's clock keeps it (1.6.0)
     assert(tj.cfg.on===false&&tj.cfg.bar==='drain'&&tj.names.some(n=>n.name==='Tea'&&n.color==='#14B8A0'&&n.dur===240000)&&!('list' in tj),JSON.stringify(tj).slice(0,300));
     for(const t of [...TM.list]) TM.C.remove(t.id);
     TM.set('bar','fill'); TM.set('order','added');
@@ -792,10 +813,11 @@ app.whenReady().then(async()=>{
     }
 
     if(part('the pill sizes: each size its own width and height, the parts give way as it narrows')){
+    await clockUp();
     // the pill: each size its own width and height; the parts follow the height and give way as it narrows (2026-10-21)
-    M.pill.set('on',true); M.pill.set('size','m'); await until(()=>P.shown&&P.win,'the pill again'); await pause(400);
+    clock.pill.set('on',true); clock.pill.set('size','m'); await until(()=>P.shown&&P.win,'the pill again'); await pause(400);
     P.O.start({name:'Sizes'}); await pause(600);
-    M.pill.set('dims',{...P.D.cfg.dims,m:{w:400,h:40}}); await pause(700);
+    clock.pill.set('dims',{...P.D.cfg.dims,m:{w:400,h:40}}); await pause(700);
     assert.deepEqual(P.D.cfg.dims.m,{w:400,h:40});
     const pz=P.pillSize();
     assert.deepEqual([pz.w,pz.h],[Math.round(400*P.D.cfg.scale),Math.round(40*P.D.cfg.scale)],"the pill takes its size's own width and height");
@@ -803,11 +825,11 @@ app.whenReady().then(async()=>{
     assert.equal(cls,'no-ph,no-sub,no-tag','400 px wide: the least important parts give way');
     assert(await pillRun("parseFloat(getComputedStyle(document.querySelector('.tm')).fontSize)>14"),'40 px high: the time is bigger');
     await pillShot('15-pill-m-400x40');
-    M.pill.set('dims',{...P.D.cfg.dims,m:{w:800,h:26}}); await pause(700);
+    clock.pill.set('dims',{...P.D.cfg.dims,m:{w:800,h:26}}); await pause(700);
     cls=await pillRun("[...document.body.classList].filter(c=>/^no-/.test(c)).join()");
     assert.equal(cls,'','800 px: everything fits');
     await pillShot('15-pill-m-800x26');
-    M.pill.set('dims',{...P.D.cfg.dims,m:{w:660,h:32}}); await pause(300);
+    clock.pill.set('dims',{...P.D.cfg.dims,m:{w:660,h:32}}); await pause(300);
     await run("openDrawer('pill');0"); await pause(500);
     assert.equal(await run("document.querySelectorAll('#pill-dims input[data-pd]').length"),6,'width and height for each size in the settings');
     await run("(()=>{const i=document.querySelector('[data-pd=\"s.w\"]');i.value=300;i.dispatchEvent(new Event('input',{bubbles:true}));})();0"); await pause(400);
@@ -815,7 +837,64 @@ app.whenReady().then(async()=>{
     await shot('15-settings-pill-dims');
     await run("document.querySelector('[data-pd-reset=s]').click();closeDrawer();0"); await pause(300);
     assert.equal(P.D.cfg.dims.s.w,232,'reset');
-    P.O.end(false); M.pill.set('on',false); await pause(400);
+    P.O.end(false); clock.pill.set('on',false); await pause(400);
+    }
+
+    // ── 1.6.0 (Hugo's r261026-ojsf answered "b"): the clock is CORE's — FLOW's pomodoro kept there, FLOW on its own without it ──
+    if(part("CORE's clock: FLOW's pomodoro kept by CORE (long breaks, the day's count), CORE away: FLOW's own timer, its switches say where the pill went, arguments kept for CORE")){
+      await clockUp();
+      if(P.D.open) P.O.end(false);
+      await run(`pomPause();selectPhase('focus');pom.sessions=0;savePomSessions();setSetting('longEvery',2);setSetting('autoNext',true);$('intention').value='Chapter 4';$('intention').dispatchEvent(new Event('input'));0`); await pause(400);
+      await run(`$('pom-start').click();0`);
+      await until(()=>P.D.open&&P.D.open.pom,'FLOW\'s start: a pomodoro in CORE\'s clock');
+      const o=P.D.open, fs0=await run('settings.focus');
+      assert(o.name==='Chapter 4'&&o.breakEvery===fs0*60&&o.longEvery===2&&o.autoNext===true,'its lengths: '+JSON.stringify(o));
+      await until(async()=>(await run(`document.body.classList.contains('linked')&&pom.running`)),'FLOW mirrors it, running');
+      // the clock reaches the break: FLOW counts the block, the music goes to its break; the 2nd break is long
+      const s0=await run('pom.sessions'), f0=await run('pom.focusSec');
+      o.sinceBreak=o.breakEvery; o.focusSec=o.breakEvery; o.phaseStart=Date.now(); await pause(1500);
+      v=await run(`({phase:pom.phase,long:pom.long,sessions:pom.sessions,body:document.body.dataset.phase})`);
+      assert.deepEqual(v,{phase:'break',long:false,sessions:s0+1,body:'break'},'a break, counted');
+      assert(await run('pom.focusSec')>=f0+o.breakEvery-60,"today's focused minutes grow with the session's");
+      P.O.phase('focus'); o.sinceBreak=o.breakEvery; o.phaseStart=Date.now(); await pause(1500);
+      v=await run(`({phase:pom.phase,long:pom.long,sessions:pom.sessions})`);
+      assert.deepEqual(v,{phase:'break',long:true,sessions:s0+2},'the 2nd: a long break');
+      await shot('16-pom-in-core');
+      await run(`pomReset();0`); await until(()=>!P.D.open,'reset ends it');
+      assert.equal(await run(`document.body.classList.contains('linked')`),false);
+      // CORE goes: FLOW's own timer again; the pill's and the timers' switches say CORE keeps them
+      M.core.quitting=true; clock.bridge.B.sock.destroy(); await pause(600);
+      assert.equal(M.core.up,false);
+      assert.equal(await run('coreUp'),false,'the page knows');
+      assert(await run(`document.body.classList.contains('no-core')`));
+      await run(`$('pom-start').click();0`); await pause(400);
+      assert.equal(await run('pom.running&&!link.on'),true,'FLOW\'s own pomodoro runs');
+      assert.equal(P.D.open,null,'nothing in the clock');
+      await run(`togglePill();0`); await pause(200);
+      assert.match(await run(`document.getElementById('toast').textContent`),/CORE keeps the pill/,'the pill\'s switch says where it went');
+      await run(`pomPause();pomReset();0`);
+      // an argument for CORE while it is away is kept, and passed on when it comes
+      assert.equal(M.coreArgs(['FLOW.exe','--flow-timer=5m','--flow-timer-name=kept for CORE']),true);
+      assert.equal(M.core.args.length,1,'kept');
+      M.core.quitting=false; M.coreConnect(); await until(()=>M.core.up&&clock.flowUp,'back on CORE',5000); await pause(500);
+      assert(TM.list.some(t=>t.name==='kept for CORE'),'passed on once CORE came');
+      assert.equal(await run('coreUp'),true);
+      for(const t of [...TM.list]) TM.C.remove(t.id);
+      await run(`setSetting('longEvery',4);0`);
+      // FLOW.exe's view menu and CORE's FLOW box before 1.6.0: --flow-view=pill and --flow-session=<name>, passed on to CORE
+      const pillWas=clock.pill.isOn();
+      app.emit('second-instance',{},['FLOW.exe','--flow-view=pill']); await pause(400);
+      assert.equal(clock.pill.isOn(),!pillWas,'the pill toggles (CORE\'s, passed on)');
+      app.emit('second-instance',{},['FLOW.exe','--flow-view=pill']); await pause(400);
+      assert.equal(clock.pill.isOn(),pillWas,'and back');
+      // CORE's FLOW box (1.5.0): FLOW.exe --flow-session=<name>, an open session by that name in the pill (CORE's, passed on)
+      if(P.D.open) P.O.end(false);
+      assert.equal(clock.pill.fromArgs(['FLOW.exe','--flow-view=mini']),false,'no session in the arguments: nothing');
+      app.emit('second-instance',{},['FLOW.exe','--flow-session=mixing  the set']); await pause(500);
+      assert.equal(P.D.open&&P.D.open.name,'mixing the set'); assert(clock.pill.isOn(),'the pill shows it');
+      app.emit('second-instance',{},['FLOW.exe','--flow-session=chapter 4']); await pause(400);
+      assert.equal(P.D.open.name,'chapter 4','a new one takes the open one\'s place');
+      P.O.end(false); if(!pillWas) clock.pill.set('on',false); await pause(300);
     }
 
     if(part('the draw loop: its pace at rest and in use, stopped while hidden, the covers turned by it')){
@@ -901,20 +980,6 @@ app.whenReady().then(async()=>{
       assert.equal(await run('miniOn'),true,'mini'); assert(win.isAlwaysOnTop());
       app.emit('second-instance',{},['FLOW.exe','--flow-view=standard']); await pause(900);
       assert.equal(await run('miniOn'),false); assert.deepEqual(win.getBounds(),initial,'standard, where it was');
-      const pillWas=M.pill.isOn();
-      app.emit('second-instance',{},['FLOW.exe','--flow-view=pill']); await pause(400);
-      assert.equal(M.pill.isOn(),!pillWas,'the pill toggles');
-      app.emit('second-instance',{},['FLOW.exe','--flow-view=pill']); await pause(400);
-      assert.equal(M.pill.isOn(),pillWas,'and back');
-      // CORE's FLOW box (1.5.0): FLOW.exe --flow-session=<name>, an open session by that name in the pill
-      const P=M.pill._test;
-      if(P.D.open) P.O.end(false);
-      assert.equal(M.pill.fromArgs(['FLOW.exe','--flow-view=mini']),false,'no session in the arguments: nothing');
-      app.emit('second-instance',{},['FLOW.exe','--flow-session=mixing  the set']); await pause(500);
-      assert.equal(P.D.open&&P.D.open.name,'mixing the set'); assert(M.pill.isOn(),'the pill shows it');
-      app.emit('second-instance',{},['FLOW.exe','--flow-session=chapter 4']); await pause(400);
-      assert.equal(P.D.open.name,'chapter 4','a new one takes the open one\'s place');
-      P.O.end(false); if(!pillWas) M.pill.set('on',false); await pause(300);
     }
 
     // persistence across a reload (always: what it reads back the parts above set, so a part that didn't run is set here)

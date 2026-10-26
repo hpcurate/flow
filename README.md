@@ -12,8 +12,8 @@ Open `dist/FLOW-win32-x64/FLOW.exe`. Keep the executable with the rest of its fo
 | **Minimal** | Just the timer and the current track, 400×660 by default (min 340×520). The pin keeps it on top. | `M` |
 | **Mini** | A 360 px always-on-top bar; it grows a progress row while the timer runs. | `B` |
 | **Full screen** | The music visualiser (or the timer visual) with a big clock. On a monitor whose top is kept by a bar (CORE's bar or minimal bar), it fills the monitor *below* the bar and follows it when the bar changes. | `F`, `Esc` to leave |
-| **Pill** | A session bar on top of everything, on or off alongside any view. Snaps to the taskbar. | `O` |
-| **Timers** | Quick timers you name on the fly, in every view, or popped out into a window of their own. | `N` for a new one |
+| **Pill** | A session bar on top of everything, on or off alongside any view. Snaps to the taskbar. CORE's since 1.6.0 (below). | `O` |
+| **Timers** | Quick timers you name on the fly, in every view, or popped out into a window of their own. CORE's since 1.6.0. | `N` for a new one |
 
 Standard, minimal and mini each remember their own size and position, on the monitor they were on, by themselves: no layout needed. A place now under a bar at the top of that monitor (CORE's) comes back just below it, never on another monitor. FLOW reopens in the last one you used. The pill remembers its monitor even when Windows gives that monitor a new id.
 
@@ -57,6 +57,16 @@ FLOW also shows what other apps are playing, such as Spotify, a browser tab or M
 - When FLOW's own track plays, it takes the panel back. A paused source keeps the panel until the other one starts playing.
 
 Switch it off in Settings → Visualiser → **Other apps**; the status line there shows what FLOW currently sees.
+
+## CORE keeps the clock (1.6.0)
+
+Since 1.6.0, with CORE 0.18.0, the pill, the open sessions, the timers and the TUTOR / GRIND link live in **CORE** (`core/clock`), which is always on. This was Hugo's r261026-ojsf: "the timers / pill should be a part of core, flow is just a fancy visualizer", answered "b". FLOW is the player and the visualiser:
+
+- **Everything below about the pill and the timers still holds.** They look and behave the same, but they run in CORE, so they keep going with FLOW closed. CORE's settings → clock has their settings, and CORE's tray their items. FLOW's drawer tabs still change them.
+- **FLOW talks to CORE over a pipe** (`\\.\pipe\hugo-core-flow`). Its timer mirrors the session, its music follows the breaks, and its music and four bars show on the pill. Its timers dock, chip and titlebar switches work as before.
+- **The start button**, with CORE there, starts FLOW's pomodoro in CORE's clock: its lengths, long breaks and "auto next". The pill says *flow*, and the day's count and focused minutes still add up here. Without CORE, FLOW's own timer runs as it always did, and the pill and timers switches say CORE keeps them.
+- **TUTOR and GRIND** link to CORE's pipe (the same one FLOW served, so they didn't change). When they start FLOW to link, FLOW starts CORE.
+- `FLOW.exe --flow-timer=…`, `--flow-session=…` and `--flow-view=pill` still work: FLOW passes them to CORE.
 
 ## The pill
 

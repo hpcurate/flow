@@ -4,8 +4,6 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const net = require('net');
 const mark = require('./mark');
-const createPill = require('./pill-main');
-const createTimers = require('./timers-main');
 
 // The two resizable views. Mini's size comes from the renderer (it grows while a
 // timer runs); full screen restores whatever was there before.
@@ -17,8 +15,6 @@ const STATE_FILE = path.join(app.getPath('userData'), 'win-state.json');
 const LEGACY_POS = path.join(app.getPath('userData'), 'win-pos.json');
 let win;
 let tray = null;
-let pill = null;        // the pill (pill-main.js), once the app is ready
-let timers = null;      // the timers (timers-main.js), once the app is ready
 let saveT = null;
 let inMini = false;
 let fsRestore = null;   // bounds to return to after full screen (also marks the transition)
@@ -36,10 +32,11 @@ app.setAppUserModelId('com.hugo.flow');
 const primary = app.requestSingleInstanceLock();
 if (!primary) app.quit();
 app.on('second-instance', (_e, argv) => {
-  // another app adding a timer (CORE's "how long?"): FLOW's window stays where it is
-  if (timers && timers.fromArgs(argv)) return;
-  // CORE's FLOW box: a focus session by name, in the pill (1.5.0)
-  if (pill && pill.fromArgs(argv)) return;
+  // a timer, a focus session or the pill (--flow-timer=…, --flow-session=…, --flow-view=pill): CORE's since 1.6.0 —
+  // passed on, FLOW's window stays where it is
+  if (coreArgs(argv)) return;
+  // TUTOR or GRIND linking found no clock: CORE is started (it serves their pipe now)
+  linkWanted(argv);
   // CORE's view menu: that view, where it was last (below)
   if (viewFromArgs(argv)) return;
   if (!win) return;
@@ -361,20 +358,15 @@ function showFlow() {
   if (win.isMinimized()) win.restore();
   win.show(); win.focus();
 }
-// rebuilt when the pill changes: its items say what they will do
-let trayKey = '';
+// the pill's and the timers' items are in CORE's tray since 1.6.0 (they live there)
 function trayMenu() {
-  const extra = [...(pill ? pill.trayItems() : []), ...(timers ? timers.trayItems() : [])];
-  const key = extra.map(i => i.label + (i.enabled === false ? '-' : '')).join('|');
-  if (!tray || key === trayKey) return;
-  trayKey = key;
+  if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show FLOW', click: showFlow },
     { type: 'separator' },
     { label: 'Play / Pause', click: () => win.webContents.send('media', 'toggle') },
     { label: 'Next track', click: () => win.webContents.send('media', 'next') },
     { label: 'Start / Pause timer', click: () => win.webContents.send('media', 'pom') },
-    ...(extra.length ? [{ type: 'separator' }, ...extra] : []),
     { type: 'separator' },
     { label: 'Quit FLOW', click: () => { remember(); app.quit(); } }
   ]));
@@ -454,96 +446,120 @@ ipcMain.on('sys:cmd', (e, { cmd, arg }) => {
 });
 app.on('will-quit', () => { sys.want = false; sysStop(); });
 
-/* ── The link (TUTOR, GRIND) ──
-   An app with a session clock (TUTOR, GRIND) connects to this pipe when its
-   link button is pressed, launching FLOW first if it is not running. One
-   JSON object per line; its hello names it. While linked that app is the
-   clock: its session is forwarded to the renderer, which mirrors it; FLOW's
-   timer buttons come back here as commands. One app at a time — a new one
-   takes over and the old one is told bye. The last session is kept so a
-   window that loads late still gets it. FLOW_LINK_PIPE moves the pipe (the
-   GUI test uses its own). The pill (pill-main.js) hears every hello, session
-   and drop: with no app linked, its open session runs the clock through the
-   same messages (kind 'open'), and the timer's buttons go to it. */
-const LINK_PIPE = process.env.FLOW_LINK_PIPE || '\\\\.\\pipe\\hugo-flow-link';
-const link = { server: null, sock: null, last: null, lastAt: 0, app: '', k: null };
-const linkName = a => String(a || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 12).toUpperCase() || 'APP';
-function linkToRenderer(m) { if (win && !win.isDestroyed()) win.webContents.send('link:msg', m); }
-function linkSend(m) { if (link.sock && !link.sock.destroyed) { try { link.sock.write(JSON.stringify(m) + '\n'); } catch {} } }
-/* CORE draws a chain between FLOW and the linked app. It reads this file and
-   never the pipe: a second client on the pipe would take the clock from the
-   linked app. Written on every link change, cleared at start and on quit. */
-const LINK_STATUS = path.join(app.getPath('userData'), 'link.json');
-function linkStatus(on) {
-  const a = on && link.sock && link.app ? link.app : null;
-  try { fs.writeFileSync(LINK_STATUS, JSON.stringify({ linked: a, since: a ? Date.now() : 0, pid: process.pid })); } catch {}
-}
-function linkDrop(s) {
-  if (link.sock !== s) return;
-  link.sock = null; link.last = null; link.app = '';
-  linkStatus(false);
-  // an open session waiting underneath takes the clock back; otherwise FLOW's own timer does
-  if (!pill || !pill.linkDropped()) linkToRenderer({ t: 'state', on: false });
-}
-function linkServe() {
-  link.server = net.createServer(s => {
-    const took = link.sock ? link.app : '';   // another app had the clock: the pill says "!"
-    if (link.sock) {
-      const old = link.sock;
-      linkSend({ t: 'bye' });
-      try { old.end(); } catch {}
-      setTimeout(() => { try { old.destroy(); } catch {} }, 1000);   // end() lets the bye through first
+/* ── CORE: the clock (1.6.0) ──
+   Since CORE 0.18.0 (Hugo's r261026-ojsf "can you merge flow and core? or at least the timers / pill should be a part of
+   core, flow is just a fancy visualizer", answered "b") the pill, the timers and the TUTOR / GRIND link live in CORE,
+   which is always on; FLOW is the player and the visualiser. This connects to CORE's pipe for FLOW and relays, both ways,
+   what the page and its pill / timers / link said to each other over IPC when they lived here — so the page is the same:
+     the page → CORE   pill:ext (its music, its own pomodoro, its theme, its intention), pill:viz (the four bars),
+                       pill:set / pill:cmd (its drawer), timers:cmd (its timers dock and drawer), link:ready, link:cmd
+     CORE → the page   link:msg (a linked app's or the open session's clock: its timer mirrors it), pill:msg, timers:msg,
+                       media (the pill's music button and FLOW's own pomodoro)
+   With CORE away, FLOW's own timer (the pomodoro) runs as it always did; the page hears core:state and its pill and timer
+   switches say where they went. Every 3 s it looks again. FLOW_CORE_PIPE moves the pipe (the GUI test hosts the clock
+   itself on its own pipe). */
+const CORE_PIPE = process.env.FLOW_CORE_PIPE || '\\\\.\\pipe\\hugo-core-flow';
+const CORE_EXE = process.env.FLOW_CORE_EXE || path.join(app.getPath('documents'), 'github', 'core', 'dist', 'CORE-win32-x64', 'CORE.exe');
+const core = { sock: null, up: false, timer: null, ext: {}, tmTheme: null, tmLast: null, args: [], launched: 0, quitting: false };
+function toPage(ch, m) { if (win && !win.isDestroyed()) win.webContents.send(ch, m); }
+function linkToRenderer(m) { toPage('link:msg', m); }
+function coreSend(m) { if (core.up && core.sock && !core.sock.destroyed) { try { core.sock.write(JSON.stringify(m) + '\n'); } catch {} return true; } return false; }
+function coreConnect() {
+  if (core.sock || core.quitting) return;
+  const s = net.connect(CORE_PIPE);
+  core.sock = s;
+  let buf = '';
+  s.setEncoding('utf8');
+  s.once('connect', () => { try { s.write(JSON.stringify({ t: 'hello', app: 'FLOW', v: 1 }) + '\n'); } catch {} });
+  s.on('data', d => {
+    buf += d;
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      if (!line) continue;
+      let m; try { m = JSON.parse(line); } catch { continue; }
+      if (core.sock === s) coreIn(m);
     }
-    link.sock = s; link.last = null; link.app = '';
-    let buf = '';
-    s.setEncoding('utf8');
-    s.on('data', d => {
-      buf += d;
-      let i;
-      while ((i = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
-        if (!line) continue;
-        let m; try { m = JSON.parse(line); } catch { continue; }
-        if (link.sock !== s) return;
-        if (m.t === 'hello') {
-          link.app = linkName(m.app); linkSend({ t: 'hello', app: 'FLOW', v: 1 });
-          linkStatus(true);
-          if (pill) pill.linkHello(link.app, m, took);
-          linkToRenderer({ t: 'state', on: true, app: link.app });
-        }
-        // an app the pill just started is what was asked for: FLOW's window stays where it is
-        else if (m.t === 'show') { if (!(pill && pill.expecting(link.app))) showFlow(); }
-        else if (m.t === 'session') { link.last = m; link.lastAt = Date.now(); linkToRenderer(m); if (pill) pill.linkSession(m); }
-        else if (m.t === 'bye') { try { s.end(); } catch {} linkDrop(s); }
-      }
-    });
-    s.on('close', () => linkDrop(s));
-    s.on('error', () => {});
   });
-  link.server.on('error', () => {});   // the pipe is taken (another FLOW build): FLOW runs unlinked
-  link.server.listen(LINK_PIPE);
-  linkStatus(false);   // a file left by a FLOW that crashed linked says unlinked again
+  s.on('error', () => {});
+  s.on('close', () => {
+    if (core.sock !== s) return;
+    core.sock = null;
+    const was = core.up; core.up = false;
+    if (was) coreGone();
+    clearTimeout(core.timer);
+    if (!core.quitting) core.timer = setTimeout(coreConnect, 3000);
+  });
 }
-ipcMain.on('link:ready', () => {
-  if (!link.sock || !link.app) { if (pill) pill.replay(); return; }
-  linkToRenderer({ t: 'state', on: true, app: link.app });
-  if (link.last) linkToRenderer(link.last);
+function coreIn(m) {
+  if (m.t === 'hello') { core.up = true; coreCame(); return; }
+  if (!core.up) return;
+  if (m.t === 'link') linkToRenderer(m.m);
+  else if (m.t === 'pill') toPage('pill:msg', m.m);
+  else if (m.t === 'timers') { if (m.m && m.m.t === 'state') core.tmLast = m.m; toPage('timers:msg', m.m); }
+  else if (m.t === 'media') toPage('media', m.act);
+  else if (m.t === 'show') showFlow();
+}
+// CORE came (FLOW started, or CORE did): it hears what the page last said, the page what CORE keeps
+function coreCame() {
+  for (const [kind, v] of Object.entries(core.ext)) coreSend({ t: 'ext', kind, v });
+  if (core.tmTheme) coreSend({ t: 'timers:cmd', m: { cmd: 'theme', v: core.tmTheme } });
+  coreSend({ t: 'link:ready' });
+  coreSend({ t: 'timers:cmd', m: { cmd: 'ready' } });
+  const a = core.args; core.args = [];
+  for (const argv of a) coreSend({ t: 'args', argv });
+  toPage('core:state', true);
+}
+// CORE went: FLOW's own timer again, no pill to speak to, the timers out of its window (they stopped with CORE)
+function coreGone() {
+  linkToRenderer({ t: 'state', on: false });
+  toPage('pill:msg', { t: 'cfg', cfg: null, today: null, open: null, shown: false, want: { viz: false } });
+  if (core.tmLast) toPage('timers:msg', { ...core.tmLast, list: [], cfg: { ...core.tmLast.cfg, on: false }, popped: false, docked: false });
+  toPage('core:state', false);
+}
+// the page's side, relayed (what it says to CORE while CORE is away is kept where it matters: its state, for coreCame).
+// FLOW's own window only: when a test hosts CORE's clock in this process, the clock's pages speak on the same channels
+const mine = e => !!(win && !win.isDestroyed() && e.sender === win.webContents);
+ipcMain.on('pill:ext', (e, { kind, v } = {}) => { if (mine(e) && kind) { core.ext[kind] = v; coreSend({ t: 'ext', kind, v }); } });
+ipcMain.on('pill:viz', (e, v) => { if (mine(e)) coreSend({ t: 'viz', v }); });
+ipcMain.on('pill:set', (e, { k, v } = {}) => { if (mine(e)) coreSend({ t: 'pill:set', k, v }); });
+ipcMain.on('pill:cmd', (e, m = {}) => { if (mine(e)) coreSend({ t: 'pill:cmd', m }); });
+ipcMain.on('timers:cmd', (e, m) => {
+  if (!mine(e)) return;
+  if (m && m.cmd === 'theme') core.tmTheme = m.v;
+  coreSend({ t: 'timers:cmd', m });
 });
-ipcMain.on('link:cmd', (e, cmd) => {
-  // no app linked: FLOW's timer is mirroring the open session, which lives in the pill
-  if (!(link.sock && link.app) && pill && pill.mirrorCmd(cmd)) return;
-  if (/^(toggle|skip|end)$/.test(cmd)) linkSend({ t: 'cmd', cmd });
-  else if (cmd === 'unlink' && link.sock) { const s = link.sock; linkSend({ t: 'bye' }); try { s.end(); } catch {} linkDrop(s); }
+ipcMain.on('link:ready', e => {
+  if (!mine(e)) return;
+  if (!coreSend({ t: 'link:ready' })) toPage('core:state', false);
+  else toPage('core:state', true);
 });
+ipcMain.on('link:cmd', (e, cmd) => { if (mine(e)) coreSend({ t: 'link:cmd', cmd }); });
+// FLOW.exe's old arguments (--flow-timer=…, --flow-session=…, --flow-view=pill): CORE's, passed on (kept until it comes)
+function coreArgs(argv) {
+  const a = (argv || []).map(String);
+  if (!a.some(x => /^--flow-(timer|session)=/i.test(x) || x.toLowerCase() === '--flow-view=pill')) return false;
+  if (!coreSend({ t: 'args', argv: a })) { core.args.push(a); startCore(); }
+  return true;
+}
+// TUTOR or GRIND started FLOW to link (--tutor-link, --grind-link: their pipe wasn't there): the pipe is CORE's now
+function linkWanted(argv) {
+  if ((argv || []).some(x => /^--(tutor|grind)-link$/i.test(String(x)))) startCore();
+}
+function startCore() {
+  if (core.up || Date.now() - core.launched < 30000 || !fs.existsSync(CORE_EXE)) return false;
+  core.launched = Date.now();
+  try { spawn(CORE_EXE, [], { detached: true, stdio: 'ignore', cwd: app.getPath('home') }).unref(); } catch { return false; }
+  return true;
+}
 app.on('will-quit', () => {
-  if (link.sock) { linkSend({ t: 'bye' }); try { link.sock.end(); } catch {} }
-  linkStatus(false);
-  if (link.server) try { link.server.close(); } catch {}
+  core.quitting = true; clearTimeout(core.timer);
+  if (core.sock) try { core.sock.end(); } catch {}
 });
 
 app.whenReady().then(() => {
   if (!primary) return;
-  linkServe();
+  coreConnect();   // 1.6.0: the clock is CORE's (the pill, the timers, the TUTOR / GRIND link)
   // the visualiser's ears for other apps: system audio loopback, no picker. The "video" half
   // of the request is FLOW's own page (no screen capture), and the renderer stops it at once.
   session.defaultSession.setDisplayMediaRequestHandler((req, cb) => {
@@ -554,14 +570,10 @@ app.whenReady().then(() => {
   // a band at the top of a monitor came, went or changed (CORE's bar): a full screen below it follows
   screen.on('display-metrics-changed', fsFollow);
   screen.on('display-removed', fsFollow);
-  // the timers can dock beside the pill: each hears when the other changes
-  pill = createPill({ getWin: () => win, link, linkSend, linkToRenderer, showFlow, getTimers: () => timers,
-    onChange: () => { trayMenu(); if (timers) timers.pillChanged(); } });
-  timers = createTimers({ getWin: () => win, showFlow, getPill: () => pill, onChange: trayMenu });
-  // started by another app for a timer (--flow-timer=…): it is added once the timers are up
-  setTimeout(() => timers.fromArgs(process.argv), 300);
-  // started by CORE's FLOW box for a session (--flow-session=…, 1.5.0)
-  setTimeout(() => pill.fromArgs(process.argv), 300);
+  // started with a timer or a session for CORE (--flow-timer=…, --flow-session=…): passed on once CORE is there
+  coreArgs(process.argv);
+  // started by TUTOR or GRIND to link: CORE serves their pipe now
+  linkWanted(process.argv);
   // started by CORE's view menu (--flow-view=…): that view once the page is up
   if (viewArg(process.argv)) win.webContents.once('did-finish-load', () => setTimeout(() => viewFromArgs(process.argv), 300));
   trayMenu();
@@ -656,7 +668,7 @@ function viewArg(argv) {
 function viewFromArgs(argv) {
   const v = viewArg(argv);
   if (!v || !win || win.isDestroyed()) return !!v;
-  if (v === 'pill') { if (pill) pill.set('on', !pill.isOn()); return true; }
+  if (v === 'pill') return true;   // the pill is CORE's (1.6.0): coreArgs passed it on
   if (v === 'fullscreen' && state.fsAt) fsTarget = screen.getDisplayNearestPoint(state.fsAt);
   if (win.isMinimized()) win.restore();
   win.show(); win.focus();
@@ -665,5 +677,5 @@ function viewFromArgs(argv) {
   return true;
 }
 
-module.exports = { restyleShortcuts, get pill() { return pill; }, get timers() { return timers; }, dock,   // for test/visual.cjs
+module.exports = { restyleShortcuts, core, coreArgs, coreConnect, dock,   // for test/visual.cjs
   homeOf, fitIn, boundsFor, viewArg, viewFromArgs, softRect, topBand, get fsSoft() { return fsSoft; }, get state() { return state; } };
