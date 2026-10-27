@@ -118,6 +118,9 @@ app.whenReady().then(async()=>{
     const fakeGrind=path.join(profile,'GRIND.exe'); fs.writeFileSync(fakeGrind,'');
     const notes=[]; TM.H.notify=t=>notes.push(t);     // no real Windows notification
     const pillRun=code=>P.win.webContents.executeJavaScript(code,true);
+    // CORE 0.24.0 (r261027-ggl6): the pill's panel is a window of its own (the same page, ?panel=1)
+    const panelRun=code=>P.panelWin.webContents.executeJavaScript(code,true);
+    const panelShot=async name=>{ P.panelWin.webContents.invalidate(); await pause(120); fs.writeFileSync(path.join(__dirname,'..',`shot-${name}.png`),(await P.panelWin.webContents.capturePage()).toPNG()); };
     // the clock up and FLOW on it (FLOW's main looks again every 3 s; told to look now)
     let clockOn=false;
     const clockUp=async()=>{
@@ -381,11 +384,12 @@ app.whenReady().then(async()=>{
 
     // an open session, named and started from the pill's panel; FLOW's window mirrors it like a link
     P.setPanel('main'); await pause(600);
-    await until(async()=>(await pillRun(`!!document.getElementById('p-name')`)),'the start panel');
-    await pillShot('13-pill-panel-start');
-    await pillRun(`document.getElementById('p-name').value='Mixing the reese';document.querySelector('[data-act=start]').click();0`);
+    await until(async()=>(await panelRun(`!!document.getElementById('p-name')`)),'the start panel');
+    await panelShot('13-pill-panel-start');
+    await panelRun(`document.getElementById('p-name').value='Mixing the reese';document.querySelector('[data-act=start]').click();0`);
     await until(()=>P.D.open,'the open session starts');
-    assert.equal(P.D.open.name,'Mixing the reese'); assert.equal(P.D.open.goalSec,7200); assert.equal(P.D.open.breakEvery,3000);
+    // (CORE 0.24.0: the defaults are g1h20 e30m f5m, Hugo's r261027-szsm)
+    assert.equal(P.D.open.name,'Mixing the reese'); assert.equal(P.D.open.goalSec,P.D.cfg.goalMin*60); assert.equal(P.D.open.breakEvery,P.D.cfg.breakEvery*60);
     await pause(500);
     v=await run(`({linked:document.body.classList.contains('linked'),phase:$('pom-phase').textContent,chip:$('link-badge').textContent,
       intention:$('intention').value,running:pom.running,tray:trayTip})`);
@@ -423,7 +427,7 @@ app.whenReady().then(async()=>{
     assert.equal(c.s.every,3000); assert(c.under&&c.under.name==='Mixing the reese bass');
     assert.equal(await run(`$('pom-phase').textContent`),'TUTOR · Focus');
     await pause(900); await pillShot('13-pill-linked-tutor');
-    P.setPanel('main'); await pause(600); await pillShot('13-pill-panel-linked'); P.setPanel(null); await pause(300);
+    P.setPanel('main'); await pause(600); await panelShot('13-pill-panel-linked'); P.setPanel(null); await pause(300);
     // TUTOR goes: the open session takes the clock back, still paused
     T.say({t:'bye'}); await pause(500);
     c=P.compose();
@@ -436,7 +440,7 @@ app.whenReady().then(async()=>{
     await pillRun(`document.querySelector('[data-act=toggle]').click();0`); await pause(300);
     const before=Math.round(P.compose().s.focus);
     P.setPanel('main'); await pause(500);
-    await pillRun(`document.querySelector('[data-act=link][data-app=GRIND]').click();0`); await pause(300);
+    await panelRun(`document.querySelector('[data-act=link][data-app=GRIND]').click();0`); await pause(300);
     assert.equal(launched.length,1);
     assert.equal(launched[0].exe,fakeGrind);
     const carry=launched[0].args.find(a=>a.startsWith('--flow-carry='));
@@ -459,7 +463,7 @@ app.whenReady().then(async()=>{
     assert.equal(P.D.done.length,1); assert.equal(P.D.done[0].name,'Reading');
     assert.deepEqual(P.compose().today.by,[{name:'Reading',min:10}]);
     P.setPanel('main'); await pause(500);
-    assert(await pillRun(`[...document.querySelectorAll('.chip')].some(c=>c.dataset.name==='Reading')`),'a used name comes back as a chip');
+    assert(await panelRun(`[...document.querySelectorAll('.chip')].some(c=>c.dataset.name==='Reading')`),'a used name comes back as a chip');
     P.setPanel(null);
 
     // dragging: free above the taskbar, and back onto it, into the spot beside the icons
@@ -503,14 +507,16 @@ app.whenReady().then(async()=>{
     await run(`openDrawer('pill');0`); await pause(500); await shot('13-pill-settings');
     await run(`document.querySelector('[data-pill-set=size] [data-v=l]').click();0`); await pause(500);
     assert.equal(P.D.cfg.size,'l');
+    const goal0=P.D.cfg.goalMin;   // (CORE 0.24.0's default: 80, Hugo's g1h20)
     await run(`document.querySelector('[data-pill-step=goalMin] [data-s="1"]').click();0`); await pause(300);
-    assert.equal(P.D.cfg.goalMin,135);
+    assert(P.D.cfg.goalMin>goal0,'a step up: '+goal0+' → '+P.D.cfg.goalMin);
+    const goal1=P.D.cfg.goalMin;
     await run(`closeDrawer();audio.pause();0`); P.set('size','m');
     // off: the window goes; the setting and the place are on disk
     await run(`togglePill();0`); await pause(900);
     assert.equal(P.win,null); assert.equal(await run(`$('pill-btn').classList.contains('on')`),false);
     const pj=JSON.parse(fs.readFileSync(path.join(profile,'clock','pill.json'),'utf8'));   // CORE's clock keeps it (1.6.0)
-    assert(pj.cfg.on===false&&pj.cfg.goalMin===135&&pj.pos&&pj.done.length===1,JSON.stringify(pj.cfg));
+    assert(pj.cfg.on===false&&pj.cfg.goalMin===goal1&&pj.pos&&pj.done.length===1,JSON.stringify(pj.cfg));
     await run(`setSetting('sysMedia',true);0`);
     }
 
@@ -699,22 +705,25 @@ app.whenReady().then(async()=>{
     const gap=await pillRun(`(()=>{const a=document.getElementById('tdock').getBoundingClientRect(),b=document.getElementById('tplus').getBoundingClientRect();return {x:a.right<=b.left?(a.right+b.left)/2:(b.right+a.left)/2,y:b.y+b.height/2}})()`);
     await hover(P.win,gap.x,gap.y,300);
     assert.equal(P.ignoring,false,'over the gap the pill still takes the clicks');
+    // (CORE 0.24.0, r261027-ggl6: the "+" keeps its spot beside the pill while the timers are docked, and fades)
+    const plusOp=()=>pillRun(`+getComputedStyle(document.getElementById('tplus')).opacity`);
     assert(await pillRun(`document.getElementById('tplus').getBoundingClientRect().width`)>20,'over the gap the "+" stays');
     await hover(P.win,2,2,150);
-    assert(await pillRun(`document.getElementById('tplus').getBoundingClientRect().width`)>20,'off the group, the "+" waits before it folds');
+    assert(await plusOp()>.8,'off the group, the "+" waits before it fades');
     await pause(1300);
-    assert(await pillRun(`document.getElementById('tplus').getBoundingClientRect().width`)<4,'then it folds');
+    assert(await plusOp()<.5,'then it fades back to its faint rest');
+    assert(await pillRun(`document.getElementById('tplus').getBoundingClientRect().width`)>20,'its spot kept');
     await hover(P.win,2,2);
     // the "+" opens the timers panel: the same list and field
     await pillRun(`document.getElementById('tplus').click();0`); await until(()=>P.panel==='timers','the timers panel');
     await pause(600);
-    assert.equal(await pillRun(`document.querySelectorAll('.panel .tm-row').length`),TM.list.length);
-    await pillShot('14-timers-pill-panel');
-    assert.match(await pillRun(`getComputedStyle(document.getElementById('panel')).animationName`),/^panel-in/,'the panel pops in');
+    assert.equal(await panelRun(`document.querySelectorAll('.panel .tm-row').length`),TM.list.length);
+    await panelShot('14-timers-pill-panel');
+    assert.match(await panelRun(`getComputedStyle(document.getElementById('panel')).animationName`),/^panel-in/,'the panel pops in');
     P.setPanel(null); await pause(60);
-    assert(await pillRun(`document.getElementById('panel').classList.contains('out')`),'closing, it plays out before the window shrinks');
+    assert(await panelRun(`document.getElementById('panel').classList.contains('out')`),'closing, it plays out before its window hides');
     await pause(300);
-    assert(await pillRun(`document.getElementById('panel').hidden`),'then it is gone');
+    assert(!P.panelWin.isVisible(),'then it is gone');
     // pulled off the pill: the pop-out comes back where it is let go
     await pillRun(`pillAPI.ui({cmd:'undock',x:${qb.x+60},y:${qb.y+30}});0`);
     await until(()=>TM.popShown,'the pop-out is back',5000);
