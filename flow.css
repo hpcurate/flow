@@ -159,6 +159,9 @@ body.mode-minimal .pill-tog,body.mode-minimal .modes-sep,body.mode-minimal .tm-p
 [data-ts=eclipse] .intention::placeholder,[data-ts=tide] .intention::placeholder{color:var(--phase)}
 [data-ts=eclipse] .intention:hover,[data-ts=tide] .intention:hover,[data-ts=eclipse] .intention:focus,[data-ts=tide] .intention:focus{border-bottom-color:var(--phase)}
 .zen[data-ts=music] .ink{color:var(--fg);mix-blend-mode:difference}
+/* 1.7.0 (r261028-vv0d): the visualiser on the stage — the clock over it as over full screen's */
+.stage[data-ts=music] .ink{color:var(--fg);mix-blend-mode:difference}
+.stage[data-ts=music] .intention::placeholder{color:var(--fg2)}
 
 .stage-bottom{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:14px;padding:4px 16px 18px}
 .pom-actions{display:flex;align-items:center;gap:12px}
@@ -525,3 +528,11 @@ body.dropping::after{content:'Drop audio files to add them';position:fixed;inset
 .pd-reset:hover{color:var(--fg);background:var(--s3)}
 
 .pd .slider{grid-template-columns:52px minmax(0,1fr) 56px;gap:10px}
+
+/* 1.7.0: a third chip on the stage (the visualiser): at the minimal view's narrowest the row tightens to keep its room */
+@container stage (max-width:400px){
+  .stage-top{gap:6px}
+  .phase-tabs button{padding:0 10px}
+  .stage-tools{gap:4px}
+  .stage-tools .chip{width:30px;height:30px}
+}

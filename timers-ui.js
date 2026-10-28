@@ -26,10 +26,8 @@ const ICON = {
 const MAX = 100 * 3600e3;
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const p2 = n => String(n).padStart(2, '0');
-function ink(hex) {
-  const n = parseInt(String(hex).slice(1), 16);
-  return .299 * (n >> 16 & 255) + .587 * (n >> 8 & 255) + .114 * (n & 255) > 150 ? '#0b0b0c' : '#F2EDE3';
-}
+// 1.7.0 (CORE 0.27.0, r261028-hr3y): each colour's own ink, of its own hue and readable on it (ink.js, CORE's)
+function ink(hex) { return Ink.on(hex); }
 
 /* ── lengths: 25m · 2h · 1h30 · 1h 30m · 90 (minutes) · 1:30 (1h30) · 45s ── */
 const UNIT = { h: 3600, m: 60, s: 1 };
@@ -144,6 +142,7 @@ function create(root, send) {
     root.classList.toggle('tm-empty', !s.list.length);
     countEl.textContent = s.list.length || '';
     root.classList.toggle('no-left', !s.cfg.showLeft);
+    root.classList.toggle('tm-caps', !!s.cfg.caps);   // 1.7.0: CORE's "names in capitals"
     const seen = new Set();
     let prev = null;
     for (const t of s.list) {

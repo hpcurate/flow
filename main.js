@@ -1,7 +1,8 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen, session, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen, session, shell, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
+const Art = require('./art.js');   // 1.7.0: the source's colour, for the stylised artwork
 const net = require('net');
 const mark = require('./mark');
 
@@ -409,7 +410,7 @@ function sysStart() {
       const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
       if (!line) continue;
       let m; try { m = JSON.parse(line); } catch { continue; }
-      if (m.t === 'state') { sys.state = m; sys.fails = 0; }
+      if (m.t === 'state') { sys.state = m; sys.fails = 0; srcLook(m); }
       else if (m.t === 'art') sys.art = m;
       else if (m.t === 'warn') { console.warn('[smtc]', m.msg); continue; }
       sysSend(m);
@@ -425,6 +426,48 @@ function sysStart() {
     clearTimeout(sys.timer);
     sys.timer = setTimeout(sysStart, 1500 * sys.fails);
   });
+}
+/* ── where the sound comes from (1.7.0, Hugo's r261028-ylsm: "change the artwork to the dominant colour of the favicon where
+   the sound is playing from (or the app if it's not a website)"). A browser: the site its playing tab is on, from the window
+   titles (the one with the track's title in it; art.js knows the sites' colours); another app: its colour (art.js), else its
+   icon's main colour (its exe, found by its process). Sent as { t: 'src', key, app, site, colour } once per track; nothing is
+   fetched, and a window's title is only read, never kept. ── */
+const src = { last: '', icons: new Map(), timer: null };
+function srcLook(m, again) {
+  if (!m || m.none || !m.app) { src.last = ''; return; }
+  const k = m.key || (m.app + '|' + (m.title || ''));
+  if (k === src.last && !again) return;
+  src.last = k; clearTimeout(src.timer);
+  (async () => {
+    let site = null;
+    if (Art.isBrowser(m.app)) {
+      try {
+        const wins = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: false });
+        site = Art.siteOf(wins.map(w => w.name), m.title);
+      } catch {}
+      // the tab's title can come a moment after the media session's: once more, 3 s later
+      if (!site && !again) src.timer = setTimeout(() => { if (src.last === k) srcLook(m, true); }, 3000);
+    }
+    const colour = (site && site.colour) || Art.appColour(m.app) || await iconColour(m.app);
+    if (src.last === k) sysSend({ t: 'src', key: k, app: m.app, site: site ? site.site : null, colour: colour || null });
+  })();
+}
+async function iconColour(aumid) {
+  if (src.icons.has(aumid)) return src.icons.get(aumid);
+  let c = null;
+  try {
+    const s = String(aumid), name = s.split(/[\\/!]/).pop().replace(/\.exe$/i, '');
+    const exe = /^[a-z]:\\.+\.exe$/i.test(s) ? s : /^[\w .-]{1,60}$/.test(name) ? await procPath(name) : null;
+    if (exe) { const img = await app.getFileIcon(exe, { size: 'normal' }); c = Art.dominant(img.toBitmap(), true); }
+  } catch {}
+  src.icons.set(aumid, c);
+  return c;
+}
+function procPath(name) {
+  const ps = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const cmd = `(Get-Process -Name '${name.replace(/'/g, "''")}' -ErrorAction SilentlyContinue | Where-Object Path | Select-Object -First 1).Path`;
+  return new Promise(res => execFile(ps, ['-NoProfile', '-NonInteractive', '-Command', cmd], { windowsHide: true, timeout: 6000 },
+    (err, out) => res(!err && String(out || '').trim() ? String(out).trim().split(/\r?\n/)[0] : null)));
 }
 function sysStop() {
   clearTimeout(sys.timer);

@@ -45,6 +45,7 @@ Six styles (`V` cycles them): **Bauhaus**, **Orbit**, **Monolith**, **Strata**, 
 - whether the clock and track are shown
 - 30 / 60 fps, and **slow down when you're elsewhere** (on): while FLOW isn't focused or pointed at, the dial draws 20 times a second. Full screen keeps its speed, and with nothing on screen (hidden, minimised) nothing is drawn at all
 - **New composition** to reshuffle the shapes
+- **On the stage** and **in the minimal view** (1.7.0): the visualiser behind the clock instead of the timer visual, each view its own switch. The stage's **Visualiser** chip (or `Shift+V`) switches it for the view you're in; the chip beside it then goes through the visualiser's styles. In the minimal view it is drawn a size smaller, so the clock keeps its room
 
 ## Other apps (Spotify & co.)
 
@@ -57,6 +58,12 @@ FLOW also shows what other apps are playing, such as Spotify, a browser tab or M
 - When FLOW's own track plays, it takes the panel back. A paused source keeps the panel until the other one starts playing.
 
 Switch it off in Settings → Visualiser → **Other apps**; the status line there shows what FLOW currently sees.
+
+**Stylise the artwork** (1.7.0, Settings → Visualiser, on): the artwork blends with FLOW.
+
+- **Spotify:** its album's artwork as a duotone: the theme's dark in its shadows, the album's own strongest colour in its lights.
+- **Anything else:** FLOW's own Bauhaus cover, in the colour of where the sound comes from. For a browser, that's the website's colour (its favicon's), found from the browser's window title (the tab with the track's title in it: YouTube, SoundCloud, Twitch, Bandcamp, Mixcloud and about fifteen more are known). Otherwise it's the app's colour: a known player's, or the main colour of its icon on this PC. Nothing is fetched from the internet.
+- **Nothing known** (a site FLOW doesn't know, the playing tab not in front): FLOW's own cover in the theme.
 
 ## CORE keeps the clock (1.6.0)
 
@@ -128,7 +135,7 @@ Quick timers, separate from the Pomodoro: "the laundry is done in 2h". Turn them
 
 ## Shortcuts
 
-`Space` play/pause · `P` start/pause timer · `F` full screen · `M` minimal ↔ standard · `B` mini player · `O` pill on/off · `N` new timer · `V` visualiser style · `T` timer visual · `,` settings · `Esc` close settings / leave full screen
+`Space` play/pause · `P` start/pause timer · `F` full screen · `M` minimal ↔ standard · `B` mini player · `O` pill on/off · `N` new timer · `V` visualiser style · `Shift+V` the visualiser on the stage (1.7.0) · `T` timer visual · `,` settings · `Esc` close settings / leave full screen
 
 Closing the window hides FLOW to the tray (music keeps playing); quit from the tray menu. Launching FLOW again brings the running one back.
 
@@ -156,6 +163,8 @@ Send that one file. It installs per user (no admin) with desktop and Start Menu 
 | `index.html` | markup for all four views and the settings drawer |
 | `flow.css` | the theme; colour tokens are written by `app.js` |
 | `viz.js` | palettes, audio analysis, every canvas style and the cover-art generator (`window.Viz`) |
+| `art.js` | 1.7.0: the stylised artwork — the sites' and apps' colours, the playing tab's site from window titles, an image's main colour, the duotone (`window.Art`, and main.js) |
+| `ink.js` | 1.7.0: a copy of CORE's `core/ink.js` — each timer colour's own text colour (keep the two the same) |
 | `app.js` | library (IndexedDB), playback, pomodoro, ambience, views, settings, render loop |
 | `main.js` / `preload.js` | Electron window: per-view bounds, mini/full-screen transitions, tray, taskbar progress, the media bridge and the system-audio grant |
 | `smtc.ps1` | the media bridge: reads the Windows media sessions and relays play/pause/skip (Windows PowerShell 5.1) |

@@ -27,7 +27,9 @@ const VIZ_DEFAULTS={vizSens:1,vizSmooth:.5,vizSpeed:1,vizDensity:.5,vizScale:1,v
 const DEFAULTS={focus:25,brk:5,longBrk:15,longEvery:4,goal:4,sync:true,autoNext:true,chime:true,
   vol:80,breakTrackId:null,noise:'off',noiseVol:40,intention:'',sysMedia:true,
   theme:'bauhaus',depth:'darker',grain:true,motion:'full',side:'player',
-  timerStyle:'orbit',vizStyle:'bauhaus',fsContent:'music',vizSeed:1,...VIZ_DEFAULTS};
+  timerStyle:'orbit',vizStyle:'bauhaus',fsContent:'music',vizSeed:1,...VIZ_DEFAULTS,
+  // 1.7.0: the music visualiser on the stage, per view (r261028-vv0d); the artwork stylised (r261028-ylsm)
+  stageViz:false,minViz:false,artStyle:true};
 let settings={...DEFAULTS};
 
 const audioA=document.getElementById('audio');
@@ -74,6 +76,7 @@ function loadSettings(){
   keep('side',v=>v==='player'||v==='library');
   keep('fps',v=>v===30||v===60);
   keep('restSlow',v=>typeof v==='boolean');
+  for(const k of ['stageViz','minViz','artStyle']) keep(k,v=>typeof v==='boolean');
   for(const k of ['focus','brk','longBrk','longEvery','goal','vol','noiseVol','vizSens','vizSmooth','vizSpeed','vizDensity','vizScale','vizSeed'])
     keep(k,v=>typeof v==='number'&&isFinite(v));
 }
@@ -102,6 +105,7 @@ function applyTheme(){
   document.querySelector('meta[name=theme-color]').content=TH.bg;
   document.body.classList.toggle('grain',!!settings.grain);
   document.body.dataset.motion=settings.motion;
+  if(typeof sys!=='undefined'&&sys&&settings.artStyle) updateNP();   // 1.7.0: the stylised artwork's colours are the theme's
   // the icon wears the theme: the titlebar mark's shapes (k1 k2 k3 k5) on the background
   const k=[TH.c[0],TH.c[1],TH.c[2],TH.c[4]];
   if(winAPI&&winAPI.setTheme) winAPI.setTheme(TH.bg,k);
@@ -122,11 +126,14 @@ function makeGrain(){
   x.putImageData(img,0,0);
   document.documentElement.style.setProperty('--grain',`url(${c.toDataURL()})`);
 }
-/* generated cover art; with img (another app's artwork) the sleeve sits on top of it */
-function setArt(el,seed,cols,rows,img){
-  const k=seed+'|'+cols+'x'+rows+(img?'|'+img.length+img.slice(-24):'');
+/* generated cover art; with img (another app's artwork) the sleeve sits on top of it; with look (1.7.0, the artwork
+   stylised) the cover wears that look's colours: its shapes read --c1…--c5, its ground --s2 */
+function setArt(el,seed,cols,rows,img,look){
+  const k=seed+'|'+cols+'x'+rows+(img?'|'+img.length+img.slice(-24):'')+(look?'|'+look.c1+look.s2:'');
   if(el.dataset.k===k) return;
   el.dataset.k=k; el.innerHTML=Viz.cover(seed,cols,rows);
+  for(const v of ['c1','c2','c3','c4','c5','s2']) if(look) el.style.setProperty('--'+v,look[v]); else el.style.removeProperty('--'+v);
+  el.classList.toggle('styled',!!look);
   if(img){ const im=new Image(); im.className='art-img'; im.alt=''; im.draggable=false; im.src=img; el.appendChild(im); }
 }
 
@@ -250,12 +257,13 @@ function prevTrack(){
 let msName=null;   // what FLOW last told Windows it is playing
 function updateNP(){
   const s=src==='sys'?sys:null, t=tracks[current], name=t?stripExt(t.name):'';
-  let title, sub, short, seed, img='';
+  let title, sub, short, seed, img='', look=null;
   if(s){
     const app=appName(s.app), by=s.artist||s.album;
     title=s.title||app; seed=title;
     sub=`<em>${esc(app)}</em>${by?' · '+esc(by):''}`; short=app+(by?' · '+by:'');
     if(sysArt.key===s.key) img=sysArt.url;
+    if(settings.artStyle){ const a=artLook(s,img); img=a.img; look=a.look; }
   } else {
     const idleSub=tracks.length?'pick a track to begin':'add music to begin';
     title=t?name:'Nothing playing'; seed=t?t.name:'flow';
@@ -264,7 +272,8 @@ function updateNP(){
   }
   $('np-title').textContent=title; $('np-sub').innerHTML=sub;
   $('sp-title').textContent=title; $('sp-sub').textContent=short;
-  setArt($('cover'),seed,6,4,img); setArt($('sp-art'),seed,2,2,img); setArt($('mini-art'),seed,2,2,img); setArt($('zen-art'),seed,2,2,img);
+  setArt($('cover'),seed,6,4,img,look); setArt($('sp-art'),seed,2,2,img,look); setArt($('mini-art'),seed,2,2,img,look); setArt($('zen-art'),seed,2,2,img,look);
+  document.body.dataset.art=!s?'flow':img&&look?'duo':look?'colour':img?'own':'flow';
   // another app's track gets only the controls that app offers
   $('loop-btn').disabled=$('shuffle-btn').disabled=!!s;
   for(const id of ['prev-btn','sp-prev','zen-prev']) $(id).disabled=!!s&&!s.prev;
@@ -326,6 +335,7 @@ function reflectTime(){
    listens to the system audio instead of FLOW's own sound. */
 let sys=null;               // {app,title,artist,album,status,pos,dur,at,prev,next,seek,key, playing,rx}
 let sysArt={key:'',url:''};
+let sysSrc={key:'',colour:null,site:null};   // 1.7.0: where it plays from, and its colour (main.js srcLook)
 let sysSeen=false, sysErr='';
 let src='flow';             // whose track the panel shows: 'flow' | 'sys'
 let lastSrc='flow';         // the last one heard playing; holds the panel while both are quiet
@@ -340,6 +350,41 @@ function appName(id){
   return s.split(/[\\/!]/).pop().replace(/\.exe$/i,'').replace(/_\w{13}$/,'')||'Another app';
 }
 function flowPlaying(){ return current>=0&&!audio.paused; }
+/* the artwork stylised (1.7.0, Hugo's r261028-ylsm "i want a way for the artwork to blend better with the rest of the app,
+   maybe if it's not playing from spotify you can figure out a way to change the artwork to the dominant colour of the
+   favicon where the sound is playing from (or the app if it's not a website)"; art.js):
+   - Spotify: its album's artwork as a duotone — the theme's dark in its shadows, the album's own strongest colour in its lights;
+   - anything else: FLOW's own cover in the colour of where it plays from — the site's (a browser), else the app's; none
+     known, FLOW's own cover in the theme. Settings → Visualiser → Other apps → stylise the artwork. */
+const duo={key:'',url:'',busy:''};
+function artLook(s,img){
+  if(Art.isSpotify(s.app)){
+    if(!img) return {img:'',look:Art.family(Art.appColour(s.app),TH.bg,TH.fg)};
+    const k=s.key+'|'+TH.bg+'|'+img.length+img.slice(-24);
+    if(duo.key===k) return {img:duo.url,look:Art.family(duo.colour,TH.bg,TH.fg)};   // its sleeve in the album's colour too
+    if(duo.busy!==k){ duo.busy=k; makeDuo(img,k); }
+    return {img,look:null};   // a moment, until its duotone is made
+  }
+  const c=sysSrc.key===s.key&&sysSrc.colour?sysSrc.colour:Art.appColour(s.app);
+  return {img:'',look:c?Art.family(c,TH.bg,TH.fg):null};
+}
+function makeDuo(url,k){
+  const im=new Image();
+  im.onload=()=>{
+    try{
+      const w=Math.min(360,im.naturalWidth||360), h=Math.min(360,im.naturalHeight||360);
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      const x=c.getContext('2d'); x.drawImage(im,0,0,w,h);
+      const d=x.getImageData(0,0,w,h), light=Art.vivid(Art.dominant(d.data)||TH.c[0]);
+      Art.duotone(d.data,TH.bg,light); x.putImageData(d,0,0);
+      if(duo.busy!==k) return;
+      duo.key=k; duo.url=c.toDataURL('image/jpeg',.9); duo.colour=light; duo.busy='';
+      updateNP();
+    }catch{ duo.busy=''; }
+  };
+  im.onerror=()=>{ duo.busy=''; };
+  im.src=url;
+}
 function pickSource(){
   if(!settings.sysMedia||!sys) return 'flow';
   if(flowPlaying()) return 'flow';
@@ -377,6 +422,7 @@ function onSys(m){
   if(!settings.sysMedia) return;
   if(m.t==='err'){ sysErr=m.msg||'unavailable'; sys=null; }
   else if(m.t==='art') sysArt={key:m.key,url:m.url};
+  else if(m.t==='src') sysSrc=m;
   else if(m.t==='state'){ sysErr=''; sysSeen=true; sys=m.none?null:Object.assign(m,{playing:m.status==='Playing',rx:Date.now()}); }
   else return;
   reflectPlayState(); updateNP(); reflectTime(); reflectSysStatus();
@@ -903,6 +949,7 @@ function applyModeClass(){
   document.body.classList.toggle('mode-minimal',winMode==='minimal');
   document.body.classList.toggle('mode-standard',winMode==='standard');
   reflectModes(); placeDock(); measureLabels();
+  reflectTimerStyle();   // 1.7.0: each view has its own stage visualiser switch
 }
 /* the titlebar's names slide out on hover (flow.css): each one's width, measured once its font is in */
 function measureLabel(sp){
@@ -1082,7 +1129,8 @@ function onSetting(k){
   else if(k==='goal'||k==='longEvery') renderPom();
   else if(k==='side') reflectSide();
   else if(k==='sysMedia') applySysMedia();
-  if(['timerStyle','vizStyle','fsContent','fsClock','fsTrack'].includes(k)){ reflectTimerStyle(); zenGeo=null; }
+  else if(k==='artStyle') updateNP();
+  if(['timerStyle','vizStyle','fsContent','fsClock','fsTrack','stageViz','minViz'].includes(k)){ reflectTimerStyle(); zenGeo=null; }
 }
 function reflectSettings(){
   document.querySelectorAll('[data-set]').forEach(g=>{
@@ -1120,9 +1168,23 @@ function reflectSide(){
   document.querySelectorAll('[data-side-view]').forEach(v=>v.classList.toggle('on',v.dataset.sideView===settings.side));
 }
 function setSide(s){ setSetting('side',s); }
+/* the music visualiser on the stage (1.7.0, Hugo's r261028-vv0d "there needs to be a toggle to view the full screen visualiser
+   when in standard mode | you can even add this visualiser in the minimal mode (adjusted to work with that format)"): the
+   stage's chip (Shift+V) draws it behind the clock instead of the timer visual, each view its own switch; the chip beside it
+   then goes through its styles. In the minimal view it fits the narrow stage: a smaller scale, the clock's room kept. */
+const stageVizKey=()=>winMode==='minimal'?'minViz':'stageViz';
+const stageViz=()=>!!settings[stageVizKey()];
+function toggleStageViz(){
+  setSetting(stageVizKey(),!stageViz());
+  toast(stageViz()?'Visualiser · '+Viz.MUSIC_STYLES[settings.vizStyle]:'Timer visual · '+Viz.TIMER_STYLES[settings.timerStyle]);
+}
 function reflectTimerStyle(){
-  $('stage').dataset.ts=settings.timerStyle;
-  $('ts-name').textContent=Viz.TIMER_STYLES[settings.timerStyle];
+  const v=stageViz();
+  $('stage').dataset.ts=v?'music':settings.timerStyle;
+  $('ts-name').textContent=v?Viz.MUSIC_STYLES[settings.vizStyle]:Viz.TIMER_STYLES[settings.timerStyle];
+  $('ts-btn').title=v?'Visualiser style (V)':'Timer visual (T)';
+  $('sv-btn').classList.toggle('on',v); $('sv-btn').setAttribute('aria-pressed',v);
+  stageGeo=null;
   refreshZen();
 }
 function nextKey(obj,cur){ const k=Object.keys(obj); return k[(k.indexOf(cur)+1)%k.length]; }
@@ -1521,7 +1583,9 @@ function frame(now){
     const c=canvasFor('stage-canvas');
     if(c){
       if(!stageGeo) stageGeo=measureDial('dial','stage-canvas',$('stage'));
-      Viz.drawTimer(c.ctx,c.w,c.h,stageGeo,st,settings.timerStyle,vopts(TH.s0,ph,vdt,{decor:true}));
+      // 1.7.0 (r261028-vv0d): the music visualiser instead, behind the clock; the minimal view's narrow stage a size smaller
+      if(stageViz()) Viz.drawMusic(c.ctx,c.w,c.h,settings.vizStyle,vopts(TH.s0,ph,vdt,{hole:true,...(winMode==='minimal'?{sc:settings.vizScale*.82,dens:Math.min(settings.vizDensity,.6)}:{})}));
+      else Viz.drawTimer(c.ctx,c.w,c.h,stageGeo,st,settings.timerStyle,vopts(TH.s0,ph,vdt,{decor:true}));
     }
     if(drawerOpen&&drawerTab==='viz'){
       const p=canvasFor('viz-preview');
@@ -1693,7 +1757,8 @@ function init(){
   $('pom-skip').onclick=pomSkip;
   $('pom-count-reset').onclick=pomResetCount;
   $('pom-sync').onclick=()=>setSetting('sync',!settings.sync);
-  $('ts-btn').onclick=cycleTimer;
+  $('ts-btn').onclick=()=>stageViz()?cycleViz():cycleTimer();
+  $('sv-btn').onclick=toggleStageViz;
   document.querySelectorAll('[data-ph]').forEach(b=>{ b.onclick=()=>selectPhase(b.dataset.ph); });
   reflectIntention();
   if(winAPI&&winAPI.pillExt) winAPI.pillExt('intention',settings.intention||'');
@@ -1705,7 +1770,8 @@ function init(){
   });
   $('intention').addEventListener('blur',reflectIntention);
 
-  // keyboard: space play · P timer · F full screen · M minimal · B mini · O pill · N new timer · V/T styles · , settings · Esc
+  // keyboard: space play · P timer · F full screen · M minimal · B mini · O pill · N new timer · V/T styles · Shift+V the stage's
+  // visualiser (1.7.0) · , settings · Esc
   document.addEventListener('keydown',e=>{
     if(e.target.matches('input:not([type=range]),textarea,select,[contenteditable=true]')){
       if(e.key==='Escape'||e.key==='Enter') e.target.blur();
@@ -1721,7 +1787,7 @@ function init(){
     else if(k==='b') miniOn?exitMini():enterMini();
     else if(k==='o') togglePill();
     else if(k==='n'){ e.preventDefault(); newTimer(); }
-    else if(k==='v') cycleViz();
+    else if(k==='v') e.shiftKey?toggleStageViz():cycleViz();
     else if(k==='t') cycleTimer();
     else if(k==='p') pomStart();
     else if(k===',') drawerOpen?closeDrawer():openDrawer(zenOn?'viz':null);

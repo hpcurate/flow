@@ -1085,6 +1085,34 @@ GUI test hosts the clock without CORE's sound hooks, so there FLOW still rings, 
 `test/visual.cjs` (the timers part): since CORE 0.19.0 (r261026-0lyd) `timers.json` keeps the timers too, so it
 now expects the list. The timers, the pill, the link and "CORE's clock" parts pass against CORE 0.20.0.
 
+## 2026-10-28 — the visualiser on the stage, the artwork stylised (1.7.0)
+
+Two prompter requests from Hugo, plus CORE 0.27.0's timer colours (his r261028-hr3y), which FLOW's window shows too.
+
+- **r261028-vv0d** "there needs to be a toggle to view the full screen visualiser when in standard mode | you can even add this
+  visualiser in the minimal mode (adjusted to work with that format)": `settings.stageViz` / `minViz` (each view its own);
+  `frame()` draws `Viz.drawMusic(..., { hole: true })` on the stage canvas instead of `drawTimer`; in the minimal view at
+  0.82 of the scale and at most 0.6 of the density. The stage's `#sv-btn` chip and `Shift+V` switch the view's own; `#ts-btn`
+  then cycles the visualiser's styles. `.stage[data-ts=music] .ink` draws the clock in `difference`, as full screen's does.
+  Settings → Visualiser: "On the stage" and "In the minimal view".
+- **r261028-ylsm** "can you add a toggle in setting to stylize the artwork of the now playing … if it's not playing from
+  spotify you can figure out a way to change the artwork to the dominant colour of the favicon where the sound is playing from
+  (or the app if it's not a website)": `art.js` (UMD) and `settings.artStyle` (on). Spotify: `makeDuo` draws its artwork as a
+  duotone (`Art.duotone`: `TH.bg` → the album's `Art.dominant` colour), its sleeve in that colour's family. Anything else: `setArt(..., look)` puts
+  `Art.family(colour)` on the cover's `--c1…--c5` / `--s2`. The colour comes from main.js `srcLook` on each new track: for a
+  browser, `desktopCapturer.getSources({ types: ['window'] })` titles → `Art.siteOf` (the title with the track's in it; the
+  site after it, about twenty known with their favicon's colour), tried again 3 s later when the tab's title lags; else
+  `Art.appColour`, else the exe's icon (`Get-Process` → `app.getFileIcon` → `Art.dominant`), cached per app. Sent as
+  `{ t: 'src', key, app, site, colour }` on `sys:msg`. Nothing is fetched (FLOW stays offline).
+- **CORE 0.27.0's inks** (r261028-hr3y): `ink.js` is CORE's `core/ink.js` copied; `timers-ui.js` `ink()` → `Ink.on`; CORE's
+  `timers.caps` → `.tm-caps`.
+- **Checks:** the GUI check's new part "1.7.0: …" (the stage in both views, Shift+V, the drawer's switches; the duotone, a
+  site's and an app's colour, nothing known, off; the timer ink and capitals in FLOW's window; `Art.siteOf` on sample titles).
+  Two fixes to the check's own order: the reload sets the intention again after "CORE's clock" (which types "Chapter 4");
+  the new part stops FLOW's pomodoro before the clock. Seen live once: his real Brave on YouTube gave the red family.
+  Flaky today: "the mini bar is on top" (as since 2026-10-25), and the draw loop's probe after "other apps".
+  Not tried by hand: Spotify's real artwork, an unknown player's icon colour.
+
 ## Open follow-ups
 - The visualiser was tuned on a generated loop. Real tracks may want a different default
   sensitivity (Settings → Visualiser → Sensitivity).

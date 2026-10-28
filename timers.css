@@ -201,3 +201,6 @@ body[data-motion=still] .tm-row.done,html.still .tm-row.done{animation:none;box-
 .tm-e-every{flex:0 0 96px}
 /* an open drop keeps its field open, whatever the focus says (a window that lost the focus mid-typing, 2026-10-21) */
 :is(.slot-card,.slot-zen).adding .tm-new{width:var(--open,100%)}
+
+/* 1.7.0 (CORE 0.27.0, r261028-hr3y): CORE's settings → clock → "names in capitals" */
+.tm-caps .tm-tag{text-transform:uppercase;letter-spacing:.05em}

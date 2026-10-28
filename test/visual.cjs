@@ -296,6 +296,96 @@ app.whenReady().then(async()=>{
     await run(`setSetting('sysMedia',true);0`);
     }
 
+    if(part("1.7.0: the visualiser on the stage (standard and minimal, Shift+V), the artwork stylised (Spotify's a duotone, a site's or an app's colour), CORE's timer inks and capitals")){
+    // ── r261028-vv0d: the stage's chip draws the music visualiser behind the clock, each view its own switch ──
+    await run(`if(zenOn)exitZen();if(miniOn)exitMini();setMode('standard');setSetting('stageViz',false);setSetting('minViz',false);0`); await pause(900);
+    assert.equal(await run(`$('stage').dataset.ts===settings.timerStyle`),true,'off: the timer visual, as before');
+    await run(`window.__dm=0;if(!window.__dmo){window.__dmo=Viz.drawMusic;Viz.drawMusic=function(ctx,...a){ if(ctx.canvas.id==='stage-canvas') window.__dm++; return window.__dmo.call(this,ctx,...a); };}0`);
+    await run(`$('sv-btn').click();0`); await pause(900);
+    v=await run(`({ts:$('stage').dataset.ts,on:$('sv-btn').classList.contains('on'),pressed:$('sv-btn').getAttribute('aria-pressed'),std:settings.stageViz,min:settings.minViz,
+      name:$('ts-name').textContent===Viz.MUSIC_STYLES[settings.vizStyle],drawn:window.__dm,blend:getComputedStyle($('pom-time')).mixBlendMode})`);
+    assert(v.drawn>5,'the music visualiser is drawn on the stage: '+v.drawn);
+    delete v.drawn;
+    assert.deepEqual(v,{ts:'music',on:true,pressed:'true',std:true,min:false,name:true,blend:'difference'},'on in the standard view');
+    await shot('17-stage-viz'); await fit('standard, the visualiser on the stage');
+    // the chip beside it goes through the visualiser's styles now
+    const was=await run(`settings.vizStyle`);
+    await run(`$('ts-btn').click();0`); await pause(200);
+    assert.notEqual(await run(`settings.vizStyle`),was,'the style chip: the next visualiser style');
+    // the minimal view: its own switch (off), Shift+V turns it on there, fitted to its narrow stage
+    await run(`setMode('minimal');0`); await pause(1000);
+    assert.equal(await run(`$('stage').dataset.ts===settings.timerStyle`),true,'minimal: its own switch, still off');
+    await run(`window.__dm=0;document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'V',code:'KeyV',shiftKey:true,bubbles:true}));0`); await pause(900);
+    v=await run(`({ts:$('stage').dataset.ts,std:settings.stageViz,min:settings.minViz,drawn:window.__dm})`);
+    assert(v.ts==='music'&&v.std&&v.min&&v.drawn>5,'Shift+V in the minimal view: '+JSON.stringify(v));
+    await shot('17-minimal-viz'); await fit('minimal, the visualiser on the stage');
+    // the settings have both switches
+    await run(`openDrawer('viz');0`); await pause(400);
+    assert.deepEqual(await run(`['stageViz','minViz','artStyle'].map(k=>document.querySelector('[data-toggle="'+k+'"]').classList.contains('on'))`),[true,true,true]);
+    await run(`closeDrawer();setSetting('minViz',false);setMode('standard');0`); await pause(900);
+    assert.equal(await run(`$('stage').dataset.ts`),'music','back in the standard view: its own, still on');
+    await run(`document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'V',code:'KeyV',shiftKey:true,bubbles:true}));0`); await pause(300);
+    assert.equal(await run(`settings.stageViz===false&&$('stage').dataset.ts===settings.timerStyle`),true,'Shift+V again: the timer visual');
+
+    // ── r261028-ylsm: the artwork stylised (scripted: the real bridge stopped, the page fed directly) ──
+    const Art=require('../art.js');
+    assert.deepEqual(Art.siteOf(['Inbox - Gmail - Brave','(3) Archangel - YouTube - Brave'],'Archangel'),{site:'YouTube',colour:'#FF0033'});
+    assert.deepEqual(Art.siteOf(['YouTube rips - SoundCloud - Google Chrome'],'YouTube rips'),{site:'SoundCloud',colour:'#FF5500'},'the site after the title, not a word in it');
+    assert.equal(Art.siteOf(['Something else - Brave'],'Archangel'),null,'the playing tab not in front: no site');
+    assert.equal(Art.appColour('Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic'),'#F2603C');
+    ipcMain.emit('sys:enable',{},false); await pause(1200);
+    // (the setting set directly: setSetting would start the real bridge again, and its first report clears what later parts set up)
+    const sysWas=await run(`settings.sysMedia`);
+    await run(`audio.pause();settings.sysMedia=true;setSetting('artStyle',true);0`);
+    // Spotify: its album as a duotone (the theme's dark, the album's own colour)
+    await run(SYS({key:'d1'})); await run(`onSys({t:'art',key:'d1',url:${ART}});0`);
+    await until(async()=>(await run(`document.body.dataset.art`))==='duo','the duotone',4000);
+    v=await run(`(()=>{const im=document.querySelector('#cover .art-img');return {img:!!im,jpeg:!!im&&im.src.startsWith('data:image/jpeg'),zen:!!document.querySelector('#zen-art .art-img')};})()`);
+    assert.deepEqual(v,{img:true,jpeg:true,zen:true},'Spotify: its own artwork, made a duotone');
+    // its pixels: the navy ground gone to the theme's dark, the yellow square to the album's red (the fixture's strongest colour)
+    await until(async()=>await run(`(()=>{const im=document.querySelector('#cover .art-img');return !!im&&im.complete&&im.naturalWidth>0;})()`),'the duotone loaded');
+    const px=await run(`(()=>{const im=document.querySelector('#cover .art-img'),c=document.createElement('canvas');c.width=c.height=300;const x=c.getContext('2d');x.drawImage(im,0,0,300,300);
+      const at=(X,Y)=>Array.from(x.getImageData(X,Y,1,1).data.slice(0,3));return {ground:at(10,10),square:at(210,210),bg:TH.bg};})()`);
+    assert(px.ground.every(v=>v<40),'the ground, dark: '+JSON.stringify(px));
+    assert(px.square[0]>180&&px.square[1]<120&&px.square[2]<90,'the yellow square, in the album\'s red: '+JSON.stringify(px));
+    await pause(300);
+    await shot('17-art-spotify');
+    // a browser on a site: FLOW's cover in the site's colour (main.js says it: { t: 'src' })
+    await run(SYS({app:'Brave',title:'Archangel',artist:'Burial',album:'',key:'d2'})); await run(`onSys({t:'src',key:'d2',app:'Brave',site:'YouTube',colour:'#FF0033'});0`); await pause(300);
+    v=await run(`({art:document.body.dataset.art,img:!!document.querySelector('#cover .art-img'),c1:$('cover').style.getPropertyValue('--c1'),styled:$('cover').classList.contains('styled'),sp:$('sp-art').style.getPropertyValue('--c1')})`);
+    assert.deepEqual(v,{art:'colour',img:false,c1:'#FF0033',styled:true,sp:'#FF0033'},'a site: its colour');
+    await shot('17-art-site');
+    // an app, before main has said anything: its own colour (art.js); one with no colour known: FLOW's own cover
+    await run(SYS({app:'VLC.exe',title:'Live set',artist:'',album:'',key:'d3'})); await pause(300);
+    assert.equal(await run(`$('cover').style.getPropertyValue('--c1')`),'#FF8800','an app: its colour');
+    await run(SYS({app:'SomePlayer.exe',title:'Live set',artist:'',album:'',key:'d4'})); await pause(300);
+    v=await run(`({art:document.body.dataset.art,c1:$('cover').style.getPropertyValue('--c1'),img:!!document.querySelector('#cover .art-img')})`);
+    assert.deepEqual(v,{art:'flow',c1:'',img:false},'nothing known: FLOW\'s own cover, in the theme');
+    // off: as before — the app's own artwork over the cover
+    await run(SYS({key:'d1'})); await run(`setSetting('artStyle',false);0`); await pause(300);
+    v=await run(`(()=>{const im=document.querySelector('#cover .art-img');return {art:document.body.dataset.art,png:!!im&&im.src.startsWith('data:image/png'),c1:$('cover').style.getPropertyValue('--c1')};})()`);
+    assert.deepEqual(v,{art:'own',png:true,c1:''},'stylise off: the artwork as it comes');
+    await run(`setSetting('artStyle',true);onSys({t:'state',none:true});settings.sysMedia=${sysWas};0`);
+
+    // ── CORE 0.27.0 (r261028-hr3y): the timers in FLOW's window wear each colour's own ink, and CORE's capitals ──
+    // (FLOW's pomodoro still running from the part before would become the clock's session here: stopped first, so the
+    // parts after find the pill idle, as they do without this one)
+    await run(`pomPause();pomReset();0`); await pause(200);
+    await clockUp();
+    TM.set('on',true); TM.set('pop',false); TM.set('caps',false);
+    for(const t of [...TM.list]) TM.C.remove(t.id);
+    TM.C.add({name:'Throw scallions',dur:30*60e3,color:'#34C66A'}); await pause(600);
+    const Ink=require('../ink.js');
+    const rgb=h=>{ const n=parseInt(h.slice(1),16); return 'rgb('+(n>>16&255)+', '+(n>>8&255)+', '+(n&255)+')'; };
+    await until(async()=>await run(`!!document.querySelector('.tm-row .tm-tag')`),'the timer in FLOW\'s window');
+    v=await run(`(()=>{const c=getComputedStyle(document.querySelector('.tm-row .tm-tag'));return {fg:c.color,tt:c.textTransform};})()`);
+    assert.deepEqual(v,{fg:rgb(Ink.on('#34C66A')),tt:'none'},'its own ink: a deep green');
+    TM.set('caps',true); await pause(500);
+    assert.equal(await run(`getComputedStyle(document.querySelector('.tm-row .tm-tag')).textTransform`),'uppercase','CORE\'s capitals');
+    await shot('17-timer-ink');
+    TM.set('caps',false); for(const t of [...TM.list]) TM.C.remove(t.id); TM.set('on',false);
+    }
+
     if(part('the TUTOR / GRIND link: the pipe (CORE\'s clock), the chip, the music on its breaks, a takeover')){
     await clockUp();
     // its music check needs other apps' media on, without the real bridge (as the part before leaves it)
@@ -993,7 +1083,8 @@ app.whenReady().then(async()=>{
     }
 
     // persistence across a reload (always: what it reads back the parts above set, so a part that didn't run is set here)
-    if(!ran.has('looks')) await run(`$('intention').value='Draft the chapter outline';$('intention').dispatchEvent(new Event('input'));0`);
+    // (1.7.0: CORE's clock part types its own intention, "Chapter 4": after it, this one is set again too)
+    if(!ran.has('looks')||ran.has("CORE's clock")) await run(`$('intention').value='Draft the chapter outline';$('intention').dispatchEvent(new Event('input'));0`);
     if(!ran.has('other apps')) await run(`setSetting('sysMedia',true);0`);
     await run(`pomPause();setSetting('theme','orchid');setSetting('timerStyle','mosaic');setSetting('vizStyle','burst');setSetting('vizSens',1.6);0`);
     win.reload(); await new Promise(r=>win.webContents.once('did-finish-load',r)); await pause(900);
